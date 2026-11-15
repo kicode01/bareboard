@@ -94,6 +94,36 @@ The classic theme's colours are not invented either. The 2.0.1.8 archive ships a
 
 The "Enhanced" plug-in turned out to be a separate 易语言 native executable, not a DLL — it embeds itself into the host window with `SetParent` and `SetWindowsHookEx`, and imports no synthetic-input functions at all.
 
+## Parity with the originals
+
+Measured against the command inventory recovered from `Lang/*.lng` (163 keys in
+2.0.1.8, 322 in 2.0.1.9), not estimated. Everything below is a deliberate
+statement of where this build differs.
+
+| Original | Here | Status |
+| --- | --- | --- |
+| View ▸ Vias | — | **Not implemented.** No parser reads via records and `Board` has no field for them. |
+| Toolbar ▸ Undo / Redo | — | **Not implemented.** |
+| Recent Files ▸ Remove From List | — | **Not implemented.** |
+| Tabs: Main / Boardview / Schematic / Firmware | Main only | Schematic and Firmware are stubs in the original too — it ships the string `{0} is under development.` |
+| ESC closes the open board | ESC clears the selection | **Different binding.** |
+| File ▸ Exit, Check for Updates, Report an Error | — | No updater and no installer in a browser. |
+| Options ▸ one instance, full screen, GDI/Direct2D, GDI quality, update modes | — | Not applicable to a browser; the Graphics tab drives the renderer switch the canvas actually has. |
+
+### What was verified
+
+57 controls were driven programmatically — every toolbar button, panel tab,
+layer toggle, dock item, canvas control, inspector tab and every menu item
+including submenus — and each was checked for an observable effect.
+
+**No dead controls.** 45 produce a visible change; the other 9 are accounted for
+individually: three are already in the target state (fit while fitted, Find while
+already on Find), three are `display: none` at desktop width, two open a native
+file picker that headless automation cannot drive (the load path behind them was
+tested directly by feeding the input a real `.cst` — it parses, reports 145 B /
+CST, and a junk file correctly reports *Format not supported* while keeping the
+previous board), and one is a probe artifact.
+
 ## Known limits
 
 - **FZ and CAE** are not supported, as above.

@@ -230,6 +230,15 @@ export default function App() {
   const doRotate = useCallback((d: number) => setRotation((r) => (r + d + 360) % 360), []);
   const doFlip = useCallback(() => setFlipY((v) => !v), []);
 
+  /** The original exposes "Close Board" (and binds ESC to it). Without this the
+   *  only way to unload a file was to reload the page. */
+  const closeBoard = useCallback(() => {
+    setBoard(null); setSelection(null); setHighlightNet(null); setQuery('');
+    setDetection(null); setError(null); setBatch([]);
+    setFlipX(false); setFlipY(false); setRotation(0);
+    notify('Board closed');
+  }, [notify]);
+
   const handleSelect = useCallback((s: Selection | null) => {
     setSelection(s);
     if (!s || !board) { setHighlightNet(null); return; }
@@ -440,6 +449,8 @@ export default function App() {
     openOptions: () => setOptions(true),
     centerSelect: () => setCenterSelectToken((t) => t + 1),
     clearSelection: () => handleSelect(null),
+    closeBoard,
+    canClose: Boolean(board),
   });
 
   return (
@@ -971,7 +982,7 @@ function ReNotes() {
 function KeyMap({ touch }: { touch: boolean }) {
   const rows: [string, string][] = [
     ['Ctrl + O', 'Open file'], ['F / dbl-click', 'Zoom to fit'], ['R', 'Rotate 90° CW'],
-    ['Comma / Period', 'Rotate 90° CCW / CW'], ['Space', 'Flip board'], ['M', 'Mirror board'],
+    ['Comma / Period', 'Rotate 90° CCW / CW'], ['Space', 'Flip board vertically'], ['M', 'Flip board horizontally'],
     ['A / W / S / D', 'Move centre mark'], ['Arrows', 'Pan board'], ['+ / − / wheel', 'Zoom'],
     ['E / Enter', 'Select under crosshair'], ['Tab', 'Cycle inspector tabs'],
     ['H', 'Toggle labels'], ['Ctrl (hold)', 'Invert labels'], ['Right-drag', 'Magnifier'],

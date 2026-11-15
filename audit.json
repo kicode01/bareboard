@@ -1,0 +1,344 @@
+[
+  {
+    "group": "toolbar",
+    "name": "Open file",
+    "click": "OK",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "toolbar",
+    "name": "Open folder",
+    "click": "OK",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "toolbar",
+    "name": "Load demo board",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Zoom to fit",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Zoom in",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Zoom out",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Rotate 90° anticlockwise",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Rotate 90° clockwise",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Flip board",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "toolbar",
+    "name": "Mirror board",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "left-tabs",
+    "name": "Find",
+    "click": "OK",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "left-tabs",
+    "name": "Formats",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "left-tabs",
+    "name": "Diagnostics",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Outline layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Pins layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Test nails layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Labels layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Net lens layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Grid layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Top side layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Bottom side layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "layers",
+    "name": "Tooltip layer",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "dock",
+    "name": "Files and search",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "dock",
+    "name": "Search parts and nets",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "dock",
+    "name": "Toggle inspector panel",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "dock",
+    "name": "Layers",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "dock",
+    "name": "Zoom to fit",
+    "click": "OK",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "canvas-controls",
+    "name": "Zoom in",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "canvas-controls",
+    "name": "Zoom out",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "canvas-controls",
+    "name": "Zoom to fit",
+    "click": "OK",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "canvas-controls",
+    "name": "Rotate 90 degrees",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "canvas-controls",
+    "name": "Flip board",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:File",
+    "name": null,
+    "click": "MISSING",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "menu:File",
+    "name": "Open folder…",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:File",
+    "name": "Load demo board",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:File",
+    "name": "Close board",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:File",
+    "name": "Recent files▸",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:File",
+    "name": "Install app",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:File",
+    "name": "No board loaded",
+    "click": "OK",
+    "verdict": "disabled-by-design"
+  },
+  {
+    "group": "menu:View",
+    "name": null,
+    "click": "MISSING",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "menu:View",
+    "name": "Zoom in+",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Zoom out−",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Rotate 90° CWR / .",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Rotate 90° CCW,",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Flip board horizontallyM",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Flip board verticallySpace",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Layers▸",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Select under crosshairE",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:View",
+    "name": "Clear selectionEsc",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:Options",
+    "name": null,
+    "click": "MISSING",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "menu:Options",
+    "name": "Theme▸",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:Options",
+    "name": "Language▸",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:Options",
+    "name": "Remember window positionn/a on web",
+    "click": "OK",
+    "verdict": "disabled-by-design"
+  },
+  {
+    "group": "menu:Options",
+    "name": "Board statistics13p · 52π · 11n · 10t",
+    "click": "OK",
+    "verdict": "disabled-by-design"
+  },
+  {
+    "group": "menu:Help",
+    "name": null,
+    "click": "MISSING",
+    "verdict": "NO-EFFECT"
+  },
+  {
+    "group": "menu:Help",
+    "name": "Reverse engineering notes",
+    "click": "OK",
+    "verdict": "ok"
+  },
+  {
+    "group": "menu:Help",
+    "name": "About BareBoard",
+    "click": "OK",
+    "verdict": "ok"
+  }
+]

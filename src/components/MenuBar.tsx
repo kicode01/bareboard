@@ -158,6 +158,8 @@ export function buildMenus(o: {
   about: () => void;
   centerSelect: () => void;
   clearSelection: () => void;
+  closeBoard: () => void;
+  canClose: boolean;
 }): MenuDef[] {
   const L = (k: keyof Layers, label: string) => ({
     label, checked: o.layers[k], onSelect: () => o.toggleLayer(k),
@@ -170,6 +172,7 @@ export function buildMenus(o: {
         { label: 'Open file…', hint: 'Ctrl+O', onSelect: o.openFile },
         { label: 'Open folder…', onSelect: o.openFolder },
         { label: 'Load demo board', onSelect: o.loadDemo },
+        { label: 'Close board', disabled: !o.canClose, onSelect: o.closeBoard },
         { separator: true },
         ...(o.recent.length > 0
           ? ([
@@ -191,8 +194,9 @@ export function buildMenus(o: {
         { separator: true },
         { label: 'Rotate 90° CW', hint: 'R / .', onSelect: o.rotateCw },
         { label: 'Rotate 90° CCW', hint: ',', onSelect: o.rotateCcw },
-        { label: 'Flip board', hint: 'Space', onSelect: o.flip },
-        { label: 'Mirror board', hint: 'M', onSelect: o.mirror },
+        // The original names these by axis: Flip Board Horizontally / Vertically.
+        { label: 'Flip board horizontally', hint: 'M', onSelect: o.mirror },
+        { label: 'Flip board vertically', hint: 'Space', onSelect: o.flip },
         { separator: true },
         {
           label: 'Layers', items: [
