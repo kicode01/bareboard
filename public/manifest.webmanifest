@@ -1,0 +1,32 @@
+{
+  "name": "BareBoard",
+  "short_name": "BareBoard",
+  "description": "Offline boardview viewer: open a bare board, trace a net, inspect a part. .brd/.bdv/.bvr/.cad/.cst/.asc.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f0f0f0",
+  "theme_color": "#f0f0f0",
+  "categories": ["utilities", "productivity", "developer"],
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/octet-stream": [
+          ".brd", ".bdv", ".bvr", ".cad", ".cst", ".asc", ".bom", ".fz", ".cae", ".tvw", ".bv", ".gr", ".f2b"
+        ]
+      }
+    }
+  ],
+  "shortcuts": [
+    { "name": "Open boardview file", "short_name": "Open", "url": "./?action=open" }
+  ]
+}

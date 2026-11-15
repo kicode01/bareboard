@@ -1,0 +1,27 @@
+{
+  "name": "bareboard",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BareBoard - offline-capable boardview viewer PWA. Independent reimplementation of the BoardViewer feature set.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty",
+    "validate": "node scripts/validate.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

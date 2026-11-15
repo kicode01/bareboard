@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# Scratch screenshots written during verification
+preview*.png
+
+# Local env / editor noise
+.env
+.env.local
+.vite/
+.idea/
+.vscode/
