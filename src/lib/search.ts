@@ -18,10 +18,11 @@ export function buildIndex(board: Board): BoardIndex {
     let info = nets.get(key);
     if (!info) { info = { name: key, pinIndices: [], partIds: new Set() }; nets.set(key, info); }
     info.pinIndices.push(index);
-    if (pin.part > 0) info.partIds.add(pin.part);
+    if (pin.part > 0 && !board.parts[pin.part - 1]?.isDummy) info.partIds.add(pin.part);
   });
   const partsByName = new Map<string, number[]>();
   board.parts.forEach((part, index) => {
+    if (part.isDummy) return;
     const key = part.name.toUpperCase();
     const list = partsByName.get(key) || [];
     list.push(index);

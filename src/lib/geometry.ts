@@ -68,3 +68,41 @@ export function zoomAt(
   const after = makeTransform(board, width, height, { ...view, scale }, flipX, flipY, rotation).project(before, scale);
   return { scale, panX: sx - width / 2 - after.x, panY: sy - height / 2 - after.y };
 }
+
+/** Center (and optionally zoom in) on a world-space bounding box, matching
+ *  OpenBoardView's CenterZoomSearchResults / CenterView behaviour. */
+export function focusBounds(
+  board: Board,
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+  width: number, height: number,
+  currentScale: number,
+  flipX: boolean, flipY: boolean, rotation: number,
+): View {
+  const bw = Math.max(120, box.maxX - box.minX);
+  const bh = Math.max(120, box.maxY - box.minY);
+  const fitScale = Math.min(
+    Math.max(Math.min((width * 0.42) / bw, (height * 0.42) / bh), currentScale),
+    6.5,
+  );
+  const scale = Math.max(currentScale, Math.min(fitScale, 3.2));
+  const target: Point = {
+    x: (box.minX + box.maxX) / 2,
+    y: (box.minY + box.maxY) / 2,
+  };
+  const r = makeTransform(board, width, height, { scale, panX: 0, panY: 0 }, flipX, flipY, rotation).project(target, scale);
+  return { scale, panX: -r.x, panY: -r.y };
+}
+
+/** Ray-casting point-in-polygon check for 4-point oriented bounding quads and hulls. */
+export function pointInPolygon(p: Point, poly: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > p.y) !== (yj > p.y))
+      && (p.x < ((xj - xi) * (p.y - yi)) / (yj - yi || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+

@@ -176,12 +176,13 @@ export function parseBdv(bytes: Uint8Array): RawBoard {
         raw.parts.push({ id: raw.parts.length + 1, name, side: loc === '(T)' ? 'top' : 'bottom',
           type: 'smd', pinStart: raw.pins.length, pinEnd: raw.pins.length });
       } else if (raw.parts.length) {
-        lx.int(); lx.str();
+        lx.int();
+        const pinName = lx.str();
         const x = lx.double() * 1000, y = lx.double() * 1000;
         lx.int();
         const net = lx.str();
         const probe = lx.int();
-        raw.pins.push(makePin(x, y, raw.parts.length, net, raw.parts[raw.parts.length - 1].side, probe));
+        raw.pins.push(makePin(x, y, raw.parts.length, net, raw.parts[raw.parts.length - 1].side, probe, pinName));
         raw.parts[raw.parts.length - 1].pinEnd = raw.pins.length;
       }
     } else if (block === 3) {
@@ -272,7 +273,7 @@ export function parseBvr3(bytes: Uint8Array): RawBoard {
       const s = lx(10).str(); part.side = s === 'T' ? 'top' : s === 'B' ? 'bottom' : 'both';
     } else if (line.startsWith('PART_ORIGIN ')) { const l = lx(12); ox = l.double(); oy = l.double(); }
     else if (line.startsWith('PART_MOUNT ')) part.type = lx(11).str() === 'SMD' ? 'smd' : 'through';
-    else if (line.startsWith('PIN_NUMBER ')) pin.name = lx(11).str();
+    else if (line.startsWith('PIN_NUMBER ')) { pin.number = lx(11).str(); if (!pin.name) pin.name = pin.number; }
     else if (line.startsWith('PIN_NAME ')) pin.name = lx(9).str();
     else if (line.startsWith('PIN_SIDE ')) {
       const s = lx(9).str(); pin.side = s === 'T' ? 'top' : s === 'B' ? 'bottom' : 'both';
@@ -296,9 +297,12 @@ export function parseBvr3(bytes: Uint8Array): RawBoard {
       for (let k = 0; k + 1 < nums.length; k += 2) raw.outline.push({ x: +nums[k], y: +nums[k + 1] });
     } else if (line.startsWith('OUTLINE_SEGMENTED ')) {
       const nums = value(line, 18).match(/[+-]?(?:\d+\.?\d*|\.\d+)/g) || [];
+      raw.outlineSegments = raw.outlineSegments || [];
       for (let k = 0; k + 3 < nums.length; k += 4) {
-        raw.outline.push({ x: +nums[k], y: +nums[k + 1] });
-        raw.outline.push({ x: +nums[k + 2], y: +nums[k + 3] });
+        const a = { x: +nums[k], y: +nums[k + 1] };
+        const b = { x: +nums[k + 2], y: +nums[k + 3] };
+        raw.outlineSegments.push([a, b]);
+        raw.outline.push(a, b);
       }
     }
   }
@@ -318,29 +322,35 @@ export function parseCad(bytes: Uint8Array): RawBoard {
     const lx = new Lexer(line);
     if (line.startsWith('COMP')) {
       lx.str();
-      const name = lx.str();
-      lx.str(); lx.str(); lx.str(); lx.str(); lx.str();
-      const loc = lx.str();
+      const first = lx.str();
+      const isMount = first === 'SMD' || first === 'TH' || first === 'THROUGH';
+      const name = isMount ? lx.str() : first;
+      const f1 = lx.str(); lx.str(); lx.str(); lx.str(); lx.str();
+      const loc = lx.str() || f1;
+      const sideToken = isMount && (f1 === '1' || f1 === '2') ? f1 : loc;
       const id = raw.parts.length + 1;
       partIds.set(name, id);
-      raw.parts.push({ id, name, side: loc === '1' ? 'top' : 'bottom', type: 'smd', pinStart: 0, pinEnd: 0 });
+      raw.parts.push({ id, name, side: sideToken === '1' ? 'top' : 'bottom', type: first === 'TH' || first === 'THROUGH' ? 'through' : 'smd', pinStart: 0, pinEnd: 0 });
     } else if (line.startsWith('C_PIN')) {
       lx.str();
-      const partName = lx.str().split('-')[0];
+      const first = lx.str();
+      const ref = first.includes('-') ? first : lx.str();
+      const [partName, pinName] = ref.split('-');
       const part = partIds.get(partName) || 0;
       const x = lx.double() * 1000, y = lx.double() * 1000;
       lx.double(); lx.double(); lx.double(); lx.str();
       const net = lx.str().replace(/^\//, '');
       const partSide = part ? raw.parts[part - 1].side : 'both';
-      raw.pins.push(makePin(x, y, part, net, partSide));
+      raw.pins.push(makePin(x, y, part, net, partSide, 0, pinName));
     } else if (line.startsWith('NET ')) {
       lx.str();
       currentNet = lx.str().replace(/^\//, '');
     } else if (line.startsWith('N_VIA')) {
-      lx.str();
-      const x = lx.double() * 1000, y = lx.double() * 1000;
-      lx.str();
-      const side = lx.double() === 1 ? 'top' : 'bottom';
+      const tokens = line.trim().split(/\s+/);
+      const offset = tokens[1] && !/^[+-]?(?:\d|\.)/.test(tokens[1]) ? 2 : 1;
+      const x = parseFloat(tokens[offset] || '0') * 1000;
+      const y = parseFloat(tokens[offset + 1] || '0') * 1000;
+      const side = parseFloat(tokens[offset + 3] || '1') === 1 ? 'top' : 'bottom';
       raw.nails.push({ x, y, side, net: currentNet, probe: raw.nails.length + 1 });
     }
   }
@@ -381,11 +391,12 @@ export function parseAsc(files: AscFiles): RawBoard {
         type: 'smd', pinStart: raw.pins.length, pinEnd: raw.pins.length });
     } else if (raw.parts.length) {
       const l = new Lexer(line);
-      l.int(); l.str();
+      l.int();
+      const pinName = l.str();
       const x = l.double() * 1000, y = l.double() * 1000;
       l.int();
       const net = l.str(), probe = l.int();
-      raw.pins.push(makePin(x, y, raw.parts.length, net, raw.parts[raw.parts.length - 1].side, probe));
+      raw.pins.push(makePin(x, y, raw.parts.length, net, raw.parts[raw.parts.length - 1].side, probe, pinName));
       raw.parts[raw.parts.length - 1].pinEnd = raw.pins.length;
     }
   }

@@ -49,13 +49,24 @@ export interface Palette {
   top: string;
   bottom: string;
   both: string;
+  pinGround: string;
+  pinNc: string;
+  pinA1: string;
+  pinTestPad: string;
+  pinSelected: string;
+  pinSameNet: string;
+  pinText: string;
+  pinNetText: string;
+  partHull: string;
   nail: string;
   active: string;
   partStroke: string;
   partFill: string;
   partFillFocus: string;
   partStrokeBottom: string;
+  partFillBottom: string;
   label: string;
+  labelBottom: string;
   labelFocus: string;
   netIdle: string;
   netActive: string;
@@ -80,13 +91,24 @@ export const PALETTES: Record<Theme, Palette> = {
     top: '#5eead4',
     bottom: '#f5b455',
     both: '#7aa9ff',
+    pinGround: '#64748b',
+    pinNc: '#334e68',
+    pinA1: '#ff6b6b',
+    pinTestPad: '#eab308',
+    pinSelected: '#22c55e',
+    pinSameNet: '#facc15',
+    pinText: '#f8fafc',
+    pinNetText: '#fde047',
+    partHull: 'rgba(125,211,252,0.55)',
     nail: '#c58bff',
     active: '#ffd479',
-    partStroke: 'rgba(94,234,212,0.38)',
-    partFill: 'rgba(94,234,212,0.035)',
-    partFillFocus: 'rgba(245,180,85,0.13)',
-    partStrokeBottom: 'rgba(245,180,85,0.5)',
-    label: 'rgba(210,230,240,0.78)',
+    partStroke: 'rgba(94,234,212,0.58)',
+    partFill: 'rgba(94,234,212,0.065)',
+    partFillFocus: 'rgba(245,180,85,0.16)',
+    partStrokeBottom: 'rgba(245,180,85,0.75)',
+    partFillBottom: 'rgba(245,180,85,0.085)',
+    label: 'rgba(210,235,245,0.9)',
+    labelBottom: '#f7c676',
     labelFocus: '#ffd479',
     netIdle: 'rgba(94,234,212,0.05)',
     netActive: 'rgba(255,212,121,0.72)',
@@ -112,13 +134,24 @@ export const PALETTES: Record<Theme, Palette> = {
     top: '#c0392b',
     bottom: '#1f6feb',
     both: '#6b46c1',
+    pinGround: '#52525b',
+    pinNc: '#64748b',
+    pinA1: '#d97706',
+    pinTestPad: '#ca8a04',
+    pinSelected: '#16a34a',
+    pinSameNet: '#eab308',
+    pinText: '#111827',
+    pinNetText: '#7c2d12',
+    partHull: 'rgba(16,185,129,0.65)',
     nail: '#0f766e',
     active: '#b45309',
-    partStroke: 'rgba(70,80,90,0.55)',
-    partFill: 'rgba(0,0,0,0.015)',
-    partFillFocus: 'rgba(51,153,255,0.12)',
-    partStrokeBottom: 'rgba(31,111,235,0.45)',
-    label: '#3b444d',
+    partStroke: 'rgba(192,57,43,0.65)',
+    partFill: 'rgba(192,57,43,0.05)',
+    partFillFocus: 'rgba(51,153,255,0.15)',
+    partStrokeBottom: 'rgba(31,111,235,0.75)',
+    partFillBottom: 'rgba(31,111,235,0.065)',
+    label: '#2c353d',
+    labelBottom: '#1557c0',
     labelFocus: '#b45309',
     netIdle: 'rgba(0,0,0,0.045)',
     netActive: 'rgba(230,126,34,0.75)',

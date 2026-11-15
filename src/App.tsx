@@ -16,7 +16,7 @@ import { Toolbar } from './components/Toolbar';
 import { BoardCanvas } from './render/BoardCanvas';
 
 const DEFAULT_LAYERS: Layers = {
-  outline: true, pins: true, nails: true, labels: true, grid: true, nets: true, top: true, bottom: true,
+  outline: true, pins: true, nails: false, labels: true, grid: true, nets: false, top: true, bottom: false,
   tooltip: true,
 };
 
@@ -78,6 +78,7 @@ export default function App() {
   const [layers, setLayers] = useState<Layers>(DEFAULT_LAYERS);
   const [view, setView] = useState<View>({ scale: 0.2, panX: 0, panY: 0 });
   const [fitToken, setFitToken] = useState(0);
+  const [focusToken, setFocusToken] = useState(0);
   // Ctrl held inverts the label layer without changing the saved toggle, which
   // is how the original documents CTRL in the Controls help.
   const [holdLabels, setHoldLabels] = useState(false);
@@ -137,7 +138,8 @@ export default function App() {
   const hits = useMemo(() => (index && board ? search(index, query, board) : []), [index, board, query]);
   const focusParts = useMemo(() => new Set(hits.filter((h) => h.kind === 'part').map((h) => h.index)), [hits]);
   const netList = useMemo(() => (index ? [...index.nets.values()].sort((a, b) => b.pinIndices.length - a.pinIndices.length) : []), [index]);
-  const partNames = useMemo(() => (board ? board.parts.map((p) => p.name) : []), [board]);
+  const realParts = useMemo(() => (board ? board.parts.filter((p) => !p.isDummy) : []), [board]);
+  const partNames = useMemo(() => realParts.map((p) => p.name), [realParts]);
   const netNames = useMemo(() => netList.map((n) => n.name), [netList]);
 
   const notify = useCallback((msg: string) => {
@@ -171,11 +173,19 @@ export default function App() {
       const result = first || results[0];
       setDetection(result.detection);
       if (first?.board) {
-        setBoard(first.board);
+        const b = first.board;
+        const hasTop = b.parts.some((p) => p.side === 'top') || b.pins.some((p) => p.side === 'top');
+        const hasBottom = b.parts.some((p) => p.side === 'bottom') || b.pins.some((p) => p.side === 'bottom');
+        setBoard(b);
+        setLayers((l) => ({
+          ...l,
+          top: hasTop || !hasBottom,
+          bottom: !hasTop && hasBottom,
+        }));
         setSelection(null); setHighlightNet(null); setQuery('');
         setFlipX(false); setFlipY(false); setRotation(0);
         setFitToken((t) => t + 1);
-        const label = first.board.name;
+        const label = b.name;
         setLibrary((prev) => [...prev.filter((f) => f.label !== label), { label, files: inputs }].slice(-6));
         // On a phone the file list is a drawer; once a board is open it should
         // get out of the way so the canvas is visible.
@@ -239,12 +249,33 @@ export default function App() {
     notify('Board closed');
   }, [notify]);
 
-  const handleSelect = useCallback((s: Selection | null) => {
+  const handleSelect = useCallback((s: Selection | null, centerZoom = false) => {
     setSelection(s);
     if (!s || !board) { setHighlightNet(null); return; }
-    if (s.kind === 'pin') setHighlightNet(board.pins[s.index]?.net || null);
-    else if (s.kind === 'nail') setHighlightNet(board.nails[s.index]?.net || null);
-    else if (s.kind === 'part') setHighlightNet(null);
+    let targetSide: 'top' | 'bottom' | 'both' | undefined;
+    if (s.kind === 'pin') {
+      const pin = board.pins[s.index];
+      setHighlightNet(pin?.net || null);
+      targetSide = pin?.side;
+    } else if (s.kind === 'nail') {
+      const nail = board.nails[s.index];
+      setHighlightNet(nail?.net || null);
+      targetSide = nail?.side;
+    } else if (s.kind === 'part') {
+      setHighlightNet(null);
+      targetSide = board.parts[s.index]?.side;
+    }
+    if (targetSide === 'top' || targetSide === 'bottom') {
+      setLayers((l) => {
+        if (l[targetSide!]) return l;
+        // If viewing a single side, switch cleanly to the selected item's side rather than stacking both.
+        if (l.top !== l.bottom) return { ...l, top: targetSide === 'top', bottom: targetSide === 'bottom' };
+        return { ...l, [targetSide!]: true };
+      });
+    } else if (targetSide === 'both') {
+      setLayers((l) => (l.top || l.bottom ? l : { ...l, top: true, bottom: false }));
+    }
+    if (centerZoom) setFocusToken((t) => t + 1);
     // A 'net' selection keeps the highlight the caller just set.
     // On mobile, tapping something should reveal its details rather than leave
     // the inspector collapsed at peek height.
@@ -257,16 +288,16 @@ export default function App() {
     setSheet((s) => (s === 'peek' ? 'half' : s === 'half' ? 'full' : 'peek'));
   }, []);
 
-  // Toolbar combos: picking a part or net is the same action as clicking it.
+  // Toolbar combos: picking a part or net centers and zooms onto it like OpenBoardView.
   const pickPart = useCallback((name: string) => {
     if (!board) return;
-    const i = board.parts.findIndex((p) => p.name === name);
-    if (i >= 0) handleSelect({ kind: 'part', index: i, key: `part:${i}` });
+    const i = board.parts.findIndex((p) => !p.isDummy && p.name === name);
+    if (i >= 0) handleSelect({ kind: 'part', index: i, key: `part:${i}` }, true);
   }, [board, handleSelect]);
 
   const pickNet = useCallback((name: string) => {
     setHighlightNet(name);
-    handleSelect({ kind: 'net', index: 0, key: `net:${name}` });
+    handleSelect({ kind: 'net', index: 0, key: `net:${name}` }, true);
   }, [handleSelect]);
 
   // The drawer is a modal overlay on phones only. Off-screen it must be inert so
@@ -341,6 +372,8 @@ export default function App() {
           break;
         case 'h': setLayers((l) => ({ ...l, labels: !l.labels })); break;
         case 'g': setLayers((l) => ({ ...l, grid: !l.grid })); break;
+        case 't': setLayers((l) => ({ ...l, top: true, bottom: false })); break;
+        case 'b': setLayers((l) => ({ ...l, top: false, bottom: true })); break;
         // "," and "." rotate anticlockwise / clockwise, as in the original.
         case ',': doRotate(-90); break;
         case '.': doRotate(90); break;
@@ -385,6 +418,13 @@ export default function App() {
   };
 
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
+  const selectSide = useCallback((side: 'top' | 'bottom' | 'both') => {
+    setLayers((l) => ({
+      ...l,
+      top: side === 'top' || side === 'both',
+      bottom: side === 'bottom' || side === 'both',
+    }));
+  }, []);
 
   const rawText = useMemo(() => {
     if (!board) return '';
@@ -423,7 +463,7 @@ export default function App() {
   const menus = buildMenus({
     boardName: board?.name ?? null,
     format: board?.format ?? null,
-    parts: board?.parts.length ?? 0,
+    parts: realParts.length,
     pins: board?.pins.length ?? 0,
     nets: index?.nets.size ?? 0,
     tests: board?.nails.length ?? 0,
@@ -469,7 +509,7 @@ export default function App() {
         <Toolbar
           board={board} layers={layers}
           partNames={partNames} netNames={netNames}
-          onToggle={toggle}
+          onSelectSide={selectSide}
           onOpenFile={() => fileRef.current?.click()}
           onOpenFolder={() => dirRef.current?.click()}
           onDemo={() => void openFiles([demoFile()])}
@@ -498,7 +538,7 @@ export default function App() {
         </div>
         <div className="top-stats">
           {board ? <>
-            <Stat label="PARTS" value={board.parts.length} />
+            <Stat label="PARTS" value={realParts.length} />
             <Stat label="PINS" value={board.pins.length} />
             <Stat label="NETS" value={index?.nets.size ?? 0} />
             <Stat label="TEST PTS" value={board.nails.length} />
@@ -579,8 +619,8 @@ export default function App() {
                 {query ? hits.map((h) => (
                   <button key={`${h.kind}-${h.label}-${h.index}`} className="result-item"
                     onClick={() => {
-                      if (h.kind === 'part') handleSelect({ kind: 'part', index: h.index, key: `part:${h.index}` });
-                      else { setHighlightNet(h.label); handleSelect({ kind: 'net', index: 0, key: `net:${h.label}` }); }
+                      if (h.kind === 'part') handleSelect({ kind: 'part', index: h.index, key: `part:${h.index}` }, true);
+                      else { setHighlightNet(h.label); handleSelect({ kind: 'net', index: 0, key: `net:${h.label}` }, true); }
                     }}>
                     <span className={`result-kind ${h.kind}`}>{h.kind === 'part' ? 'REF' : 'NET'}</span>
                     <span className="result-label">{h.label}</span>
@@ -588,7 +628,7 @@ export default function App() {
                   </button>
                 )) : netList.slice(0, 30).map((n) => (
                   <button key={n.name} className={`result-item ${highlightNet === n.name ? 'active' : ''}`}
-                    onClick={() => { setHighlightNet(n.name); handleSelect({ kind: 'net', index: 0, key: `net:${n.name}` }); }}>
+                    onClick={() => { setHighlightNet(n.name); handleSelect({ kind: 'net', index: 0, key: `net:${n.name}` }, true); }}>
                     <span className="result-kind net">NET</span>
                     <span className="result-label">{n.name}</span>
                     <span className="result-sub">{n.pinIndices.length} pins</span>
@@ -652,6 +692,20 @@ export default function App() {
           <div className="canvas-tabs" role="tablist" aria-label="Board views">
             <button type="button" role="tab" aria-selected className="active">Main</button>
           </div>
+          <div className="stage-sides" role="group" aria-label="Board sides">
+            <button type="button" className={`side-pill top${layers.top && !layers.bottom ? ' on' : ''}`}
+              aria-pressed={layers.top && !layers.bottom} onClick={() => selectSide('top')} title="Show top side only (T)">
+              <i className="side-dot top" aria-hidden="true" />Top
+            </button>
+            <button type="button" className={`side-pill bottom${layers.bottom && !layers.top ? ' on' : ''}`}
+              aria-pressed={layers.bottom && !layers.top} onClick={() => selectSide('bottom')} title="Show bottom side only (B)">
+              <i className="side-dot bottom" aria-hidden="true" />Bottom
+            </button>
+            <button type="button" className={`side-pill both${layers.top && layers.bottom ? ' on' : ''}`}
+              aria-pressed={layers.top && layers.bottom} onClick={() => selectSide('both')} title="Overlay both sides">
+              Both
+            </button>
+          </div>
           <div className="stage-hud" aria-hidden="true">
             <span>ZOOM {(view.scale * 1000).toFixed(0)}</span>
             <span>ROT {rotation}°</span>
@@ -665,9 +719,21 @@ export default function App() {
             selection={selection} highlightNet={highlightNet} focusParts={focusParts}
             onSelect={handleSelect} onCursor={setCursor} onFit={doFit}
             onRotate={doRotate} onFlip={doFlip} fitToken={fitToken}
+            focusToken={focusToken}
             centerSelectToken={centerSelectToken}
             palette={palette}
           />
+          {board && !layers.top && !layers.bottom && (
+            <div className="canvas-empty sides-hidden">
+              <div className="empty-title">Top and Bottom sides are hidden</div>
+              <div className="empty-sub">Enable at least one board side to see components, pins and test points.</div>
+              <div className="sides-hidden-actions">
+                <button type="button" className="btn" onClick={() => setLayers((l) => ({ ...l, top: true }))}>Show Top</button>
+                <button type="button" className="btn" onClick={() => setLayers((l) => ({ ...l, bottom: true }))}>Show Bottom</button>
+                <button type="button" className="btn primary" onClick={() => setLayers((l) => ({ ...l, top: true, bottom: true }))}>Show Both</button>
+              </div>
+            </div>
+          )}
           {dragOver && <div className="drop-overlay"><div>↥</div><strong>Release to load boardview</strong><span>Files and folders are both accepted</span></div>}
           {busy && <div className="busy">Parsing…</div>}
         </main>
@@ -703,8 +769,8 @@ export default function App() {
                   <strong>{board.name}</strong>
                 </div>
                 <Row k="Board size" v={`${mm(board.bounds.maxX - board.bounds.minX)} × ${mm(board.bounds.maxY - board.bounds.minY)} mm`} />
-                <Row k="Components" v={board.parts.length} />
-                <Row k="Pins" v={board.pins.length} />
+                <Row k="Components" v={`${realParts.length} (${realParts.filter((p) => p.side === 'top').length}T / ${realParts.filter((p) => p.side === 'bottom').length}B)`} />
+                <Row k="Pins" v={`${board.pins.length} (${board.pins.filter((p) => p.side === 'top').length}T / ${board.pins.filter((p) => p.side === 'bottom').length}B)`} />
                 <Row k="Nets" v={index?.nets.size ?? 0} />
                 <Row k="Test points" v={board.nails.length} />
                 <p className="hint">Click a pin to trace its net. Click a component body to inspect its pins.</p>
@@ -731,9 +797,9 @@ export default function App() {
             )}
             {selectedPin && board && (
               <div className="detail">
-                <div className="detail-head"><span className="badge pin">PIN</span><h2>{selectedPin.name || `#${selection!.index + 1}`}</h2></div>
+                <div className="detail-head"><span className="badge pin">PIN</span><h2>{selectedPin.name || selectedPin.number || `#${selection!.index + 1}`}</h2></div>
                 <Row k="Net" v={selectedPin.net} />
-                <Row k="Part" v={selectedPin.part ? board.parts[selectedPin.part - 1]?.name || '—' : 'orphan'} />
+                <Row k="Part" v={selectedPin.part ? (board.parts[selectedPin.part - 1]?.isDummy ? 'Test Pad' : board.parts[selectedPin.part - 1]?.name || '—') : 'orphan'} />
                 <Row k="Side" v={selectedPin.side} />
                 <Row k="Probe" v={selectedPin.probe || '—'} />
                 <Row k="Position" v={`${Math.round(selectedPin.x)}, ${Math.round(selectedPin.y)} mil`} />
@@ -756,7 +822,7 @@ export default function App() {
                 <div className="mini-title">Connected components</div>
                 <div className="chip-list">
                   {[...activeNet.partIds].slice(0, 24).map((id) => (
-                    <button key={id} onClick={() => handleSelect({ kind: 'part', index: id - 1, key: `part:${id - 1}` })}>
+                    <button key={id} onClick={() => handleSelect({ kind: 'part', index: id - 1, key: `part:${id - 1}` }, true)}>
                       {board?.parts[id - 1]?.name || `P${id}`}
                     </button>
                   ))}
@@ -878,9 +944,9 @@ function Row({ k, v }: { k: string; v: string | number }) {
   return <div className="kv"><span>{k}</span><strong>{v}</strong></div>;
 }
 
-function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
+function Toggle({ on, onClick, label, side }: { on: boolean; onClick: () => void; label: string; side?: 'top' | 'bottom' }) {
   return (
-    <button type="button" className={`toggle ${on ? 'on' : ''}`} onClick={onClick}
+    <button type="button" className={`toggle${side ? ` side-${side}` : ''} ${on ? 'on' : ''}`} onClick={onClick}
       aria-pressed={on} aria-label={`${label} layer`}>
       <i aria-hidden="true" />{label}
     </button>
@@ -896,8 +962,8 @@ function LayerToggles({ layers, toggle }: { layers: Layers; toggle: (k: keyof La
       <Toggle on={layers.labels} onClick={() => toggle('labels')} label="Labels" />
       <Toggle on={layers.nets} onClick={() => toggle('nets')} label="Net lens" />
       <Toggle on={layers.grid} onClick={() => toggle('grid')} label="Grid" />
-      <Toggle on={layers.top} onClick={() => toggle('top')} label="Top side" />
-      <Toggle on={layers.bottom} onClick={() => toggle('bottom')} label="Bottom side" />
+      <Toggle on={layers.top} onClick={() => toggle('top')} label="Top side" side="top" />
+      <Toggle on={layers.bottom} onClick={() => toggle('bottom')} label="Bottom side" side="bottom" />
       <Toggle on={layers.tooltip} onClick={() => toggle('tooltip')} label="Tooltip" />
     </div>
   );
@@ -985,6 +1051,7 @@ function KeyMap({ touch }: { touch: boolean }) {
     ['Comma / Period', 'Rotate 90° CCW / CW'], ['Space', 'Flip board vertically'], ['M', 'Flip board horizontally'],
     ['A / W / S / D', 'Move centre mark'], ['Arrows', 'Pan board'], ['+ / − / wheel', 'Zoom'],
     ['E / Enter', 'Select under crosshair'], ['Tab', 'Cycle inspector tabs'],
+    ['T / B', 'Toggle top / bottom side'],
     ['H', 'Toggle labels'], ['Ctrl (hold)', 'Invert labels'], ['Right-drag', 'Magnifier'],
     ['Esc', 'Clear selection'],
   ];

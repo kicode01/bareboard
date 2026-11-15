@@ -5,7 +5,7 @@ interface Props {
   layers: Layers;
   partNames: string[];
   netNames: string[];
-  onToggle: (k: keyof Layers) => void;
+  onSelectSide: (side: 'top' | 'bottom' | 'both') => void;
   onOpenFile: () => void;
   onOpenFolder: () => void;
   onDemo: () => void;
@@ -66,11 +66,22 @@ export function Toolbar(p: Props) {
 
       <span className="tb-sep" aria-hidden="true" />
 
-      {/* The original exposes the two sides as plain text items in this bar. */}
-      <button type="button" className={`tb-side${p.layers.top ? ' on' : ''}`}
-        aria-pressed={p.layers.top} onClick={() => p.onToggle('top')}>Top</button>
-      <button type="button" className={`tb-side${p.layers.bottom ? ' on' : ''}`}
-        aria-pressed={p.layers.bottom} onClick={() => p.onToggle('bottom')}>Bottom</button>
+      {/* The original exposes the two sides in this bar; clicking switches to that side. */}
+      <button type="button" className={`tb-side top${p.layers.top && !p.layers.bottom ? ' on' : ''}`}
+        aria-pressed={p.layers.top && !p.layers.bottom} onClick={() => p.onSelectSide('top')}
+        title="Show top side only (T)">
+        <i className="side-dot top" aria-hidden="true" />Top
+      </button>
+      <button type="button" className={`tb-side bottom${p.layers.bottom && !p.layers.top ? ' on' : ''}`}
+        aria-pressed={p.layers.bottom && !p.layers.top} onClick={() => p.onSelectSide('bottom')}
+        title="Show bottom side only (B)">
+        <i className="side-dot bottom" aria-hidden="true" />Bottom
+      </button>
+      <button type="button" className={`tb-side both${p.layers.top && p.layers.bottom ? ' on' : ''}`}
+        aria-pressed={p.layers.top && p.layers.bottom} onClick={() => p.onSelectSide('both')}
+        title="Overlay both sides">
+        Both
+      </button>
 
       <span className="tb-sep" aria-hidden="true" />
 

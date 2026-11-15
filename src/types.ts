@@ -20,6 +20,16 @@ export interface Part {
   pinStart: number; // inclusive index into Board.pins
   pinEnd: number; // exclusive index into Board.pins
   box?: Bounds;
+  /** 4-point oriented bounding quad (OBV rotated passive or Minimum Area Bounding Box). */
+  outline?: Point[];
+  /** Convex hull points for multi-pin ICs and connectors. */
+  hull?: Point[];
+  /** Computed center point in world mils. */
+  center?: Point;
+  /** Pin-to-pin expanse for radial capacitor indicator circles. */
+  expanse?: number;
+  /** True for virtual "..." test-pad holder components in BRD/BDV/BVR/CST. */
+  isDummy?: boolean;
   info?: string;
 }
 
@@ -31,6 +41,10 @@ export interface Pin {
   side: Side;
   probe: number;
   name?: string;
+  /** 1-based pin number within its component ("1", "2", or BGA pad number). */
+  number?: string;
+  /** True when the pin belongs to a virtual "..." test-pad component. */
+  isTestPad?: boolean;
   radius: number;
 }
 
@@ -47,6 +61,7 @@ export interface Board {
   format: string;
   formatId: string;
   outline: Point[];
+  outlineSegments?: [Point, Point][];
   parts: Part[];
   pins: Pin[];
   nails: Nail[];
