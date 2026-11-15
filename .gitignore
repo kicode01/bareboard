@@ -12,3 +12,6 @@ preview*.png
 .vite/
 .idea/
 .vscode/
+
+# Scratch output from the control audit
+audit.json
