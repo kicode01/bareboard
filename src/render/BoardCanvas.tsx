@@ -9,7 +9,9 @@ import {
   classifyPartPackage,
   drawRealistic2DPart,
   makeProjector3D,
+  orbitAroundPivot,
   renderBoard3D,
+  zoomAt3D,
   type Camera3D,
   type RenderMode,
 } from './realistic3d';
@@ -91,12 +93,13 @@ export function BoardCanvas(props: Props) {
     panY: number;
     pitchDeg: number;
     yawDeg: number;
+    pivotWorld: Point;
     orbiting: boolean;
     moved: boolean;
   } | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<Hover | null>(null);
-  const [cam3d, setCam3d] = useState<Camera3D>({ pitchDeg: 52, yawDeg: -18 });
+  const [cam3d, setCam3d] = useState<Camera3D>({ pitchDeg: 48, yawDeg: -16 });
   const [dragMode3d, setDragMode3d] = useState<'orbit' | 'pan'>('orbit');
 
   // --- touch state -----------------------------------------------------------
@@ -127,6 +130,16 @@ export function BoardCanvas(props: Props) {
       : null),
     [board, size.w, size.h, view, flipX, flipY, rotation, renderMode, cam3d],
   );
+
+  // Pivots the 3D camera around whatever world point is currently at the center of the viewport!
+  const applyCam3D = useCallback((nextCam: Camera3D) => {
+    setCam3d(nextCam);
+    if (!board || !size.w || !size.h) return;
+    const curProj = makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, cam3d);
+    const pivot = curProj.unprojectToPlane(size.w / 2, size.h / 2, 0);
+    const { panX, panY } = orbitAroundPivot(pivot, view.scale, board, flipX, flipY, rotation, nextCam);
+    onView({ ...view, panX, panY });
+  }, [board, size.w, size.h, view, flipX, flipY, rotation, cam3d, onView]);
 
   // Refs keep the fit / focus effects stable: they fire only when App increments their tokens.
   const onViewRef = useRef(onView); onViewRef.current = onView;
@@ -215,6 +228,7 @@ export function BoardCanvas(props: Props) {
     if (renderMode === '3d' && proj3d) {
       renderBoard3D(
         ctx, board, index, layers, view, size, tr, proj3d,
+        cam3d, flipX, flipY, rotation,
         selection, highlightNet, focusParts, palette, isClassic,
       );
 
@@ -231,7 +245,7 @@ export function BoardCanvas(props: Props) {
       ctx.fillStyle = palette.scaleText;
       ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`3D · ${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
+      ctx.fillText(`3D (TILT ${Math.round(cam3d.pitchDeg)}° · SPIN ${Math.round(cam3d.yawDeg)}°) · ${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
       return;
     }
 
@@ -290,7 +304,7 @@ export function BoardCanvas(props: Props) {
       }
       if (board.outline.length > 2) {
         ctx.fillStyle = isRealistic
-          ? (isClassic ? 'rgba(18, 82, 54, 0.88)' : 'rgba(13, 36, 40, 0.88)')
+          ? (isClassic ? 'rgba(18, 82, 54, 0.9)' : 'rgba(13, 36, 40, 0.9)')
           : palette.outlineFill;
         ctx.fill('evenodd');
       }
@@ -383,9 +397,7 @@ export function BoardCanvas(props: Props) {
       ctx.globalAlpha = 1;
     }
 
-    // In Realistic 2D mode, draw pins BEFORE X-Ray translucent component packages
-    // (or draw pads under + crisp ring on top) so components sit over their PCB pads!
-    const drawPins2D = () => {
+    const drawPins2D = (baseSolderPass: boolean) => {
       if (!layers.pins) return;
       type PinBucket = 'top' | 'bottom' | 'both' | 'gnd' | 'nc' | 'testPad' | 'pin1';
       interface ScreenPin {
@@ -440,9 +452,34 @@ export function BoardCanvas(props: Props) {
           buckets[pin.side].push(sp);
         }
 
-        if (r >= 10 || ((isSelected || isPartSelected || isSameNet) && r >= 7)) {
+        if (!baseSolderPass && (r >= 10 || ((isSelected || isPartSelected || isSameNet) && r >= 7))) {
           labeledPins.push(sp);
         }
+      }
+
+      if (baseSolderPass) {
+        // Under-component gold/copper PCB solder pads in 2D Realistic mode
+        const drawSolderPad = (arr: ScreenPin[], col: string, alpha: number) => {
+          if (!arr.length) return;
+          const dimFactor = hasFilter ? 0.45 : 1;
+          ctx.beginPath();
+          for (const sp of arr) {
+            ctx.moveTo(sp.sx + sp.r * 1.05, sp.sy);
+            ctx.arc(sp.sx, sp.sy, sp.r * 1.05, 0, Math.PI * 2);
+          }
+          ctx.fillStyle = col;
+          ctx.globalAlpha = alpha * dimFactor;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        };
+        drawSolderPad(buckets.nc, '#475569', 0.45);
+        drawSolderPad(buckets.gnd, '#64748b', 0.6);
+        drawSolderPad(buckets.both, '#a855f7', 0.65);
+        drawSolderPad(buckets.bottom, '#3b82f6', 0.72);
+        drawSolderPad(buckets.top, '#d4af37', 0.78);
+        drawSolderPad(buckets.testPad, '#eab308', 0.88);
+        drawSolderPad(buckets.pin1, palette.pinA1, 0.85);
+        return;
       }
 
       const drawBucket = (arr: ScreenPin[], strokeColor: string, fillAlpha: number, strokeAlpha: number) => {
@@ -453,12 +490,12 @@ export function BoardCanvas(props: Props) {
           ctx.moveTo(sp.sx + sp.r, sp.sy);
           ctx.arc(sp.sx, sp.sy, sp.r, 0, Math.PI * 2);
         }
-        ctx.fillStyle = isRealistic && (strokeColor === palette.top) ? '#d4af37' : strokeColor;
-        ctx.globalAlpha = (isRealistic ? fillAlpha + 0.16 : fillAlpha) * dimFactor;
+        ctx.fillStyle = isRealistic && strokeColor === palette.top ? '#d4af37' : strokeColor;
+        ctx.globalAlpha = (isRealistic ? fillAlpha * 0.75 : fillAlpha) * dimFactor;
         ctx.fill();
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = Math.min(1.65, Math.max(0.85, arr[0].r * 0.25));
-        ctx.globalAlpha = strokeAlpha * dimFactor;
+        ctx.globalAlpha = (isRealistic ? strokeAlpha * 0.78 : strokeAlpha) * dimFactor;
         ctx.stroke();
         ctx.globalAlpha = 1;
       };
@@ -547,6 +584,9 @@ export function BoardCanvas(props: Props) {
       }
     };
 
+    // In Realistic 2D mode, draw base gold/copper PCB solder pads underneath component packages first!
+    if (isRealistic) drawPins2D(true);
+
     // Component bodies
     interface PartShape {
       part: Part;
@@ -591,7 +631,7 @@ export function BoardCanvas(props: Props) {
       if (isRealistic) {
         const spec = classifyPartPackage(part);
         drawRealistic2DPart(
-          ctx, part, quad, cx, cy, spec, S, view.scale,
+          ctx, board, part, quad, cx, cy, spec, S, view.scale,
           selected, focused, hasFilter && !highlighted, palette,
         );
       } else {
@@ -637,8 +677,8 @@ export function BoardCanvas(props: Props) {
       partShapes.push({ part, i, quad, cx, cy, minSX, maxSX, minSY, maxSY, focused, selected });
     });
 
-    // Draw pins on top (X-Ray overlay) so every BGA ball and pad is visible and clickable
-    drawPins2D();
+    // Draw X-Ray pin rings & labels on top so every BGA ball and pad stays visible & clickable
+    drawPins2D(false);
 
     // Component labels
     if (layers.labels) {
@@ -655,6 +695,12 @@ export function BoardCanvas(props: Props) {
         let angle = len01 >= len12 ? Math.atan2(dy01, dx01) : Math.atan2(dy12, dx12);
         if (angle > Math.PI / 2) angle -= Math.PI;
         if (angle < -Math.PI / 2) angle += Math.PI;
+
+        const spec = isRealistic ? classifyPartPackage(part) : null;
+        // In Realistic mode, keep small passives' ceramic/resistive bodies clean until zoomed in (>= 26px)
+        if (isRealistic && spec && !spec.showLabelAtAllZooms && !selected && !focused && longSide < 26) {
+          continue;
+        }
 
         const maxFontW = (longSide * 0.72) / Math.max(1, part.name.length * 0.6);
         const maxFontH = shortSide * 0.68;
@@ -759,7 +805,7 @@ export function BoardCanvas(props: Props) {
     ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`${barMils} mil  /  ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
-  }, [board, index, layers, view, size, tr, proj3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
+  }, [board, index, layers, view, size, tr, proj3d, cam3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
 
   const localPoint = (e: ReactPointerEvent | ReactWheelEvent | ReactMouseEvent): Point => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -867,8 +913,12 @@ export function BoardCanvas(props: Props) {
     e.preventDefault();
     if (!board) return;
     const p = localPoint(e);
-    const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
-    onView(zoomAt(view, e.deltaY < 0 ? 1.18 : 1 / 1.18, p.x, p.y, size.w, size.h, board, flipX, flipY, effRot));
+    const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
+    if (renderMode === '3d') {
+      onView(zoomAt3D(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+    } else {
+      onView(zoomAt(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
+    }
   };
 
   const quick = useRef<{ view: View } | null>(null);
@@ -898,10 +948,15 @@ export function BoardCanvas(props: Props) {
     }
     if (pointers.current.size > 2) return;
 
-    if (e.button === 2 && board) {
+    // Right-click in 2D mode (or Alt+Right-click in 3D) activates the 3x temporary magnifier.
+    // Plain right-drag or middle-drag in 3D mode performs the complementary camera action (Pan vs Orbit)!
+    if (e.button === 2 && board && (renderMode !== '3d' || e.altKey)) {
       quick.current = { view };
-      const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
-      onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, effRot));
+      if (renderMode === '3d') {
+        onView(zoomAt3D(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+      } else {
+        onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
+      }
       return;
     }
 
@@ -912,14 +967,22 @@ export function BoardCanvas(props: Props) {
           longPress.current = null;
           quick.current = { view };
           setMagnifying(true);
-          const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
-          onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, effRot));
+          if (renderMode === '3d') {
+            onView(zoomAt3D(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+          } else {
+            onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
+          }
         }, 420),
       };
     }
 
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    const orbiting = renderMode === '3d' && (e.shiftKey || e.button === 1 || dragMode3d === 'orbit');
+    const invert3dAction = e.shiftKey || e.button === 1 || e.button === 2;
+    const orbiting = renderMode === '3d' && (invert3dAction ? dragMode3d !== 'orbit' : dragMode3d === 'orbit');
+    const pivotWorld = proj3d
+      ? proj3d.unprojectToPlane(size.w / 2, size.h / 2, 0)
+      : { x: ((board?.bounds.minX ?? 0) + (board?.bounds.maxX ?? 0)) / 2, y: ((board?.bounds.minY ?? 0) + (board?.bounds.maxY ?? 0)) / 2 };
+
     drag.current = {
       x: e.clientX,
       y: e.clientY,
@@ -927,6 +990,7 @@ export function BoardCanvas(props: Props) {
       panY: view.panY,
       pitchDeg: cam3d.pitchDeg,
       yawDeg: cam3d.yawDeg,
+      pivotWorld,
       orbiting,
       moved: false,
     };
@@ -941,9 +1005,11 @@ export function BoardCanvas(props: Props) {
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const base = pinch.current;
-      const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
-      const z = zoomAt(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, effRot);
-      onView({ ...z, panX: z.panX + (mx - base.mx), panY: z.panY + (my - base.my) });
+      const z = renderMode === '3d'
+        ? zoomAt3D(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, rotation, cam3d)
+        : zoomAt(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, rotation);
+      const pitchScaleY = renderMode === '3d' ? Math.max(0.35, Math.cos((cam3d.pitchDeg * Math.PI) / 180)) : 1;
+      onView({ ...z, panX: z.panX + (mx - base.mx), panY: z.panY + (my - base.my) / pitchScaleY });
       onCursor(proj3d ? proj3d.unprojectToPlane(mx, my, 0) : (tr?.toWorld(mx, my) ?? null));
       return;
     }
@@ -953,13 +1019,26 @@ export function BoardCanvas(props: Props) {
     if (drag.current) {
       const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
-      if (drag.current.orbiting) {
-        setCam3d({
-          yawDeg: ((drag.current.yawDeg + dx * 0.45 + 540) % 360) - 180,
+      if (drag.current.orbiting && board) {
+        const nextCam: Camera3D = {
+          yawDeg: ((drag.current.yawDeg + dx * 0.42 + 540) % 360) - 180,
           pitchDeg: Math.max(0, Math.min(76, drag.current.pitchDeg - dy * 0.35)),
-        });
+        };
+        setCam3d(nextCam);
+        // Pivot around the screen center point so the inspected component never flies off screen!
+        const { panX, panY } = orbitAroundPivot(
+          drag.current.pivotWorld,
+          view.scale,
+          board,
+          flipX,
+          flipY,
+          rotation,
+          nextCam,
+        );
+        onView({ ...view, panX, panY });
       } else {
-        onView({ ...view, panX: drag.current.panX + dx, panY: drag.current.panY + dy });
+        const pitchScaleY = renderMode === '3d' ? Math.max(0.35, Math.cos((cam3d.pitchDeg * Math.PI) / 180)) : 1;
+        onView({ ...view, panX: drag.current.panX + dx, panY: drag.current.panY + dy / pitchScaleY });
       }
       onCursor(proj3d ? proj3d.unprojectToPlane(p.x, p.y, 0) : (tr?.toWorld(p.x, p.y) ?? null));
       return;
@@ -1058,8 +1137,11 @@ export function BoardCanvas(props: Props) {
 
   const zoom = (factor: number) => {
     if (!board) return;
-    const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
-    onView(zoomAt(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, effRot));
+    if (renderMode === '3d') {
+      onView(zoomAt3D(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+    } else {
+      onView(zoomAt(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, rotation));
+    }
   };
 
   const realPartCount = useMemo(
@@ -1072,7 +1154,7 @@ export function BoardCanvas(props: Props) {
       <canvas
         ref={canvasRef}
         className="board-canvas"
-        style={{ width: '100%', height: '100%' }}
+        style={{ width: '100%', height: '100%', cursor: renderMode === '3d' ? (dragMode3d === 'orbit' ? 'grab' : 'move') : 'crosshair' }}
         role="img"
         aria-label={board
           ? `${board.name}: ${realPartCount} components, ${board.pins.length} pins. Use the inspector to browse parts.`
@@ -1098,7 +1180,7 @@ export function BoardCanvas(props: Props) {
             type="button"
             className={dragMode3d === 'orbit' ? 'on' : ''}
             onClick={() => setDragMode3d('orbit')}
-            title="Left-drag orbits the 3D board"
+            title="Left-drag orbits around screen center; Right-drag pans"
           >
             Orbit
           </button>
@@ -1106,45 +1188,53 @@ export function BoardCanvas(props: Props) {
             type="button"
             className={dragMode3d === 'pan' ? 'on' : ''}
             onClick={() => setDragMode3d('pan')}
-            title="Left-drag pans across the 3D board (Shift+drag still orbits)"
+            title="Left-drag pans; Right-drag or Shift+drag orbits"
           >
             Pan
           </button>
           <span className="cam3d-sep" />
           <button
             type="button"
-            onClick={() => setCam3d((c) => ({ ...c, pitchDeg: Math.min(75, c.pitchDeg + 10) }))}
+            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.min(75, cam3d.pitchDeg + 10) })}
             title="Tilt 3D camera steeper"
           >
             Tilt +
           </button>
           <button
             type="button"
-            onClick={() => setCam3d((c) => ({ ...c, pitchDeg: Math.max(0, c.pitchDeg - 10) }))}
+            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.max(0, cam3d.pitchDeg - 10) })}
             title="Flatten 3D camera tilt"
           >
             Tilt −
           </button>
           <button
             type="button"
-            onClick={() => setCam3d((c) => ({ ...c, yawDeg: ((c.yawDeg - 25 + 540) % 360) - 180 }))}
-            title="Spin 3D turntable counter-clockwise"
+            onClick={() => applyCam3D({ ...cam3d, yawDeg: ((cam3d.yawDeg - 25 + 540) % 360) - 180 })}
+            title="Spin 3D turntable counter-clockwise around screen center"
           >
             ⟲
           </button>
           <button
             type="button"
-            onClick={() => setCam3d((c) => ({ ...c, yawDeg: ((c.yawDeg + 25 + 540) % 360) - 180 }))}
-            title="Spin 3D turntable clockwise"
+            onClick={() => applyCam3D({ ...cam3d, yawDeg: ((cam3d.yawDeg + 25 + 540) % 360) - 180 })}
+            title="Spin 3D turntable clockwise around screen center"
           >
             ⟳
           </button>
+          <span className="cam3d-sep" />
           <button
             type="button"
-            onClick={() => setCam3d({ pitchDeg: 52, yawDeg: -18 })}
+            onClick={() => applyCam3D({ pitchDeg: 0, yawDeg: 0 })}
+            title="Top-down 0° view"
+          >
+            Top 0°
+          </button>
+          <button
+            type="button"
+            onClick={() => applyCam3D({ pitchDeg: 48, yawDeg: -16 })}
             title="Reset 3D isometric angle"
           >
-            Reset 3D
+            Iso 3D
           </button>
         </div>
       )}
