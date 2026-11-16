@@ -6,21 +6,11 @@
     Inspect components, trace copper nets, explore pinouts, and identify board abbreviations locally on desktop or mobile.
   </p>
   <p>
-    <a href="https://github.com/kicode01/bareboard/actions/workflows/ci.yml">
-      <img src="https://github.com/kicode01/bareboard/actions/workflows/ci.yml/badge.svg" alt="CI" />
-    </a>
-    <a href="https://github.com/kicode01/bareboard/commits/main">
-      <img src="https://img.shields.io/github/last-commit/kicode01/bareboard?style=flat&color=2563eb" alt="Last commit" />
-    </a>
-    <a href="https://github.com/kicode01/bareboard/issues?q=is%3Aissue+is%3Aclosed">
-      <img src="https://img.shields.io/github/issues-closed/kicode01/bareboard?style=flat&color=16a34a" alt="Closed issues" />
-    </a>
-    <a href="https://github.com/kicode01/bareboard/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/kicode01/bareboard?style=flat&color=64748b" alt="MIT License" />
-    </a>
-    <img src="https://img.shields.io/badge/React-18-149eca?style=flat&logo=react&logoColor=white" alt="React 18" />
-    <img src="https://img.shields.io/badge/TypeScript-5-3178c6?style=flat&logo=typescript&logoColor=white" alt="TypeScript 5" />
-    <img src="https://img.shields.io/badge/PWA-Offline%20Ready-0f766e?style=flat" alt="Offline PWA" />
+    <a href="https://github.com/kicode01/bareboard/actions/workflows/ci.yml"><img src="https://github.com/kicode01/bareboard/actions/workflows/ci.yml/badge.svg" alt="CI" height="20" /></a>
+    <a href="https://github.com/kicode01/bareboard/blob/main/LICENSE"><img src="https://img.shields.io/github/license/kicode01/bareboard?style=flat&color=64748b" alt="MIT License" height="20" /></a>
+    <img src="https://img.shields.io/badge/React-18-149eca?style=flat&logo=react&logoColor=white" alt="React 18" height="20" />
+    <img src="https://img.shields.io/badge/TypeScript-5-3178c6?style=flat&logo=typescript&logoColor=white" alt="TypeScript 5" height="20" />
+    <img src="https://img.shields.io/badge/PWA-Offline%20Ready-0f766e?style=flat" alt="Offline PWA" height="20" />
   </p>
 </div>
 
