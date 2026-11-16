@@ -1,143 +1,147 @@
-# BareBoard
+<div align="center">
+  <img src="public/icon.svg" alt="BareBoard logo" width="72" height="72" />
+  <h1>BareBoard</h1>
+  <p>
+    <strong>Offline-capable 2D CAD, 2D Realistic, and interactive 3D PCB boardview workbench in the browser.</strong><br />
+    Inspect components, trace copper nets, explore pinouts, and identify board abbreviations locally on desktop or mobile.
+  </p>
+</div>
 
-**A boardview viewer that runs in a browser.** Open a bare board, trace a net, inspect a part — offline, on a phone.
-
-A bare board is a PCB before any parts are placed on it: copper, pads and nets, no components. That is exactly what these files describe, so that is what this is called.
-
-![BareBoard, classic theme](screenshots/classic-1280.png)
+![BareBoard Studio 3D View](screenshots/studio-desktop-3d.png)
 
 <p align="center">
-  <img src="screenshots/classic-390.png" width="250" alt="Phone, classic theme">
-  <img src="screenshots/classic-options-general.png" width="420" alt="Options dialog">
+  <img src="screenshots/studio-desktop-nets.png" width="49%" alt="Studio Dark 2D Realistic view with plain-English Net tracing" />
+  <img src="screenshots/studio-guide.png" width="49%" alt="Interactive 3-tab PCB Component and Abbreviation Guide" />
+</p>
+
+<p align="center">
+  <img src="screenshots/studio-mobile.png" width="260" alt="Responsive Mobile 3D Touch Workbench" />
 </p>
 
 ---
 
-## What it is
-
-An independent reimplementation of **BoardViewer 2.0.1.8 / 2.0.1.9** — the Windows tool electronics repair techs use to open `.brd`, `.bdv` and `.cst` files and find their way around a motherboard.
-
-The originals are Win32 desktop applications, and the formats they read have no official specification. This project reads those formats directly and renders them with Canvas 2D, so the same board opens on a phone, a tablet, or a laptop, works with no network, and installs as a PWA.
-
-No proprietary code, binary or artwork from the original applications is included or required.
-
-## Why bother
-
-Because the alternative is a Windows-only executable from 2019 that you cannot open on the bench tablet you actually carry, cannot search, and cannot read on a phone at 3 a.m.
-
-## Formats
-
-| Format | Status | Notes |
-| --- | --- | --- |
-| **BRD** | ✅ | The classic `str_length:` / `var_data:` / `Format:` text format |
-| **BRD2** | ✅ | Newer text variant with a different header |
-| **BDV** | ✅ | Binary boardview |
-| **BVR** | ✅ | Binary, multiple revisions |
-| **CAD** | ✅ | GenCAD-style ASCII netlist + geometry |
-| **CST** | ✅ | Test-link style compact format |
-| **ASC / TSICT** | ✅ | Folder format — `format.asc`, `pins.asc`, `nails.asc` together |
-| **ZIP** | ✅ | Unwraps the above |
-| FZ | ❌ | Encrypted with a vendor key that ships in a separate database |
-| CAE | ❌ | Same problem |
-
-The two encrypted formats are deliberately out of scope: they need a key database that cannot be shipped in a browser build, and OpenBoardView has the same requirement.
-
 ## Features
 
-- **Open** by file picker, drag-and-drop, or folder (for the multi-file ASC format). Accepts `.zip`.
-- **Navigate** with pan, zoom, pinch, rotate in 90° steps, flip to the other side, mirror.
-- **Trace** a net by tapping a pin, or select a part to see its pins and the nets they belong to.
-- **Search** parts and nets by name or reference designator.
-- **Layers** — outline, pins, test nails, labels, nets, grid, top side, bottom side, tooltips.
-- **Inspect** — part body, footprint, pin list, net membership, board statistics.
-- **Two themes** — `Classic`, a reproduction of the original WinForms chrome, and `Dark`.
-- **Keyboard** — `Ctrl+O`, `F` fit, `R` rotate, `Space` flip, `M` mirror, `E` select under crosshair, `Esc` clear, and more.
-- **Touch** — pinch to zoom, long-press for a 3× magnifier, bottom sheet for inspection.
-- **Accessible** — every control reachable by keyboard, focus trapped in overlays, `aria-pressed` / `aria-expanded` / `role="dialog"` throughout, contrast at or above WCAG AA, honours `prefers-reduced-motion`.
-- **Offline** — installable PWA with a runtime cache-first service worker.
+- **Three Synchronized Render Modes**
+  - **2D CAD** (`V`): Clean vector pads, outlines, Pin 1 markers, test points, and net airwires.
+  - **2D Real** (`V`): Top-down illustrated SMD/through-hole component packages matching physical proportions.
+  - **3D View** (`3`): Perspective-projected PCB substrate (`1.6 mm` FR-4 thickness) with standing TO-220 MOSFETs, radial electrolytic cans, shielded ferrite inductors, closed brushed-steel edge I/O shields, slotted headers, BGAs, QFNs/QFPs, and JEDEC-scaled passives.
+- **Plain-English Component & Net Labels**
+  - Inline component type tags (`Microchip`, `Ceramic Cap`, `Transistor`, `Resistor`, `Connector`, etc.), role descriptions, mount labels (`Surface-mount (SMD)`, `Through-hole`, `Ball grid (BGA)`), and net explanations (`GND`, `+3V3`, `VIN`, `SDA`/`SCL`, `USB_DP`/`USB_DM`, `RESET`, `BOOT0`, `CLK`, `PWM`, etc.) across Browse, Inspector, Pinouts, Command Palette, and hover tooltips.
+  - Built-in **PCB Component & Abbreviation Guide** (`Parts (13)` · `Nets & Signals` · `Board Terms`) with one-click filtering on the loaded board.
+- **Fast Search & Navigation (`⌘K` / `Ctrl+K`)**
+  - Command Palette and virtualized Browse list match reference designators (`U1`, `Q7560`), plain-English types (`capacitor`, `mosfet`, `inductor`), net names (`SDA`, `PP3V3_S5`), and signal categories (`power`, `i2c`, `usb`, `clock`, `reset`, `boot`).
+- **Desktop CAD Studio + Mobile Touch Workbench**
+  - Collapsible/resizable Explorer & Inspector side rails on desktop (`1440×900+`); responsive slide-over drawers, bottom selection peek sheet, one-finger drag-orbit / pinch-zoom / long-press `3×` magnifier on phones (`< 860 px`).
+- **Three Themes**: **Studio Dark**, **Studio Light**, and **Classic (WinForms)**.
+- **100% Client-Side & Installable PWA**: All parsing happens locally in the browser with no backend upload, backed by `public/sw.js` for offline shell caching and OS file-handler integration (`launchQueue`).
 
-## Run it
+---
+
+## Supported Formats
+
+| Format | Extension / Layout | Status | Notes |
+| --- | --- | --- | --- |
+| **BRD** | `.brd` | Supported | Classic text & `0x23E26328`-encoded BRD files (handles both `0x0c` SMD flags and side-only `1`/`2` exports) |
+| **BRD2** | `.brd` | Supported | `BRDOUT:` / `NETS:` / `PARTS:` / `PINS:` / `NAILS:` variant with automatic Y-flip correction |
+| **BDV** | `.bdv` | Supported | Subtractive-cipher ASC bundle (`<<format.asc>>` / `<<pins.asc>>` / `<<nails.asc>>`) |
+| **BVR** | `.bvr` | Supported | `BVRAW_FORMAT_1` text layout |
+| **BVR3** | `.bvr` | Supported | Key/value `PART_*` / `PIN_*` / `OUTLINE_*` format |
+| **CAD** | `.cad` | Supported | GenCAD-style `COMP` / `C_PIN` / `NET` / `N_VIA` format |
+| **CST** | `.cst` | Supported | Binary `CPad` boardview container |
+| **ASC / TSICT** | Directory or `.zip` | Supported | Drop `format.asc`, `pins.asc`, and `nails.asc` together |
+| **ZIP** | `.zip` | Supported | Expands single-file or multi-file boardview archives locally via `fflate` |
+| **FZ / CAE / XZZPCB** | `.fz`, `.cae`, `.xzzpcb` | Not supported | Proprietary encrypted vendor key databases are intentionally excluded |
+
+---
+
+## Controls
+
+| Desktop Shortcut | Action | Mobile Touch Gesture |
+| --- | --- | --- |
+| `Cmd/Ctrl + K` | Open Command Palette (parts, nets, commands) | **Tap Find** in bottom dock |
+| `Ctrl + O` | Open boardview file | **Tap Upload** in top bar |
+| `[` / `]` | Toggle Explorer / Inspector panels | **Browse / Inspect** dock buttons |
+| `V` / `3` | Cycle `2D CAD`, `2D Real`, and `3D View` | Mode pills in top stage bar |
+| `F` / Double-click | Zoom to fit board | **Tap Fit** |
+| `Drag` (left button) | Pan (`2D`) or Orbit (`3D`) | **Single-finger drag** |
+| `Wheel` | Cursor-centered zoom (`2D` & `3D`) | **Two-finger pinch** |
+| `Right-drag` | `3×` Magnifier (`2D`) / Pan (`3D` while Orbit active) | **Long press** for `3×` magnifier |
+| `R` / `,` / `.` | Rotate `90°` CW / CCW | Rotate buttons in floating dock |
+| `Space` / `M` | Flip vertically / Mirror horizontally | Flip & Mirror tray |
+| `T` / `B` | Top side only / Bottom side only | **Top / Bottom / Both** pills |
+| `H` / `G` | Toggle Part Labels / Grid | **Layers** bottom sheet |
+| `A W S D` / Arrows | Pan camera | — |
+| `E` / `Enter` / `Esc` | Select under crosshair / Clear selection | **Tap** pad, pin, or component |
+
+---
+
+## Getting Started
+
+Requires **Node.js 20+** and **npm**.
 
 ```bash
 npm install
-npm run dev        # dev server
-npm run build      # production build
-npm run preview    # serve the build
-npm run validate   # parse every file in samples/ and report what came out
+npm run dev        # Start Vite dev server
+npm run check      # Run typecheck, validate all sample fixtures, and build dist/
+npm run preview    # Serve production dist/ locally
 ```
 
-`samples/` holds small synthetic boards in each supported format. They are hand-authored fixtures for the parser tests, not real customer boards.
+### Individual Scripts
 
-## How it works
-
+```bash
+npm run typecheck  # TypeScript strict check (tsc -b)
+npm run validate   # Bundle parsers and verify all fixtures in samples/
+npm run build      # Production build into dist/ (relative base "./" for any static host)
 ```
+
+`samples/` contains synthetic fixture boards for automated validation (`npm run validate`); `public/samples/` serves the built-in browser demo and reference samples at runtime.
+
+---
+
+## Architecture
+
+```text
 src/
-  parsers/     format detection + one reader per format, all returning the same Board
-  render/      BoardCanvas — Canvas 2D, DPR-aware, pointer/touch gestures
-  components/  MenuBar, Toolbar, OptionsDialog, inspector, search, layers
-  lib/         theme + canvas palettes, geometry helpers, unit formatting
+  App.tsx                  Responsive Studio workbench, Classic theme shell, shortcuts, modals
+  main.tsx                 App mount + bundled Inter variable font
+  styles.css               Tailwind v4 + Base UI semantic tokens (Studio Dark / Light)
+  styles-classic.css       Classic WinForms theme overrides
+  types.ts                 Shared Board, Part, Pin, Nail, Layers, Selection interfaces
+  parsers/
+    detect.ts              Magic-byte & extension format detector
+    text.ts                BRD, BRD2, BDV, BVR, BVR3, CAD, ASC/TSICT parsers
+    binary.ts              CST binary parser
+    util.ts                OpenBoardView MBB convex hulls, EPC Y-flip check, JEDEC neighbor clearance
+    index.ts               Unified loadBoard() entrypoint + ZIP unwrapping
+    demo.ts                Embedded demo.brd fixture loader
+  render/
+    BoardCanvas.tsx        DPR-aware 2D/3D canvas, hit-testing, hover tooltips, touch gestures
+    realistic3d.ts         Package classifier, 2D Realistic drawer, perspective 3D component renderer
+  lib/
+    packages.ts            Component, net/signal, and PCB glossary metadata for beginner UX
+    search.ts              Indexed part/net search supporting refdes + plain-English keywords
+    geometry.ts            2D transforms, bounds fitting, polygon hit-testing
+    theme.ts               Studio Dark, Studio Light, and Classic canvas palettes
+    files.ts               File picker & directory drag-and-drop readers
+    pwa.ts                 Service worker registration & launchQueue file-handler integration
+    utils.ts               cn() Tailwind class helper
+  components/
+    ExplorerPanel.tsx      Virtualized Browse list, Files/samples browser, Diagnostics inspector
+    InspectorPanel.tsx     Board stats, clickable component breakdown, part pinout, net/pin details
+    ComponentGuideDialog.tsx 3-tab Parts, Nets & Signals, and Board Terms interactive guide
+    CommandPalette.tsx     cmdk unified search & command launcher
+    CanvasDock.tsx         Floating zoom/rotate/flip/3D orbit dock + Layers popover
+    OptionsDialog.tsx      Theme & graphics settings dialog
+    MenuBar.tsx / Toolbar.tsx  Classic WinForms menu bar & tool strip
+    BrandMark.tsx / PackageGlyph.tsx / MaterialIcon.tsx  Dual Deck mark, package icons & SVG icons
+    ui/                    Reusable shadcn/Base UI/Vaul primitives
 ```
 
-Every parser returns the same `Board` shape, so the renderer and the whole UI are format-agnostic. Colours live in a per-theme `Palette` object passed into the canvas rather than being hardcoded in the drawing code, which is what makes two complete themes possible from one markup tree.
-
-The responsive shell is one component tree, not two: below 860 px the left panel becomes an overlay drawer and the inspector becomes a three-state bottom sheet, but no function is dropped.
-
-## How the original was taken apart
-
-This is the part that made the project possible, so it is worth stating plainly.
-
-Both executables are obfuscated with **ConfuserEx v1.0.0** — control flow flattened into `switch` dispatchers, calls routed through proxy stubs, constants encrypted, resources sealed with PBKDF2 + Rijndael. Of 211,532 decompiled lines, only five identifiers survived, and the entire 24 MB of IL contains 25 `ldstr` instructions, all of them empty.
-
-What did survive: the `Lang/*.lng` catalogues, which are `key=value` pairs where **the key is the English source string** — 163 keys in 2.0.1.8 and 322 in 2.0.1.9. Every menu label, keyboard shortcut and error message in this project comes from those files rather than from guessing.
-
-The classic theme's colours are not invented either. The 2.0.1.8 archive ships a manual with four screenshots embedded as images; they were extracted and pixel-sampled for the control face (`#f0f0f0`), window (`#ffffff`), border (`#898c95`) and tooltip (`#ffffe1`), and cross-checked against `Color.FromArgb` constants that survive in the decompiled sources.
-
-The "Enhanced" plug-in turned out to be a separate 易语言 native executable, not a DLL — it embeds itself into the host window with `SetParent` and `SetWindowsHookEx`, and imports no synthetic-input functions at all.
-
-## Parity with the originals
-
-Measured against the command inventory recovered from `Lang/*.lng` (163 keys in
-2.0.1.8, 322 in 2.0.1.9), not estimated. Everything below is a deliberate
-statement of where this build differs.
-
-| Original | Here | Status |
-| --- | --- | --- |
-| View ▸ Vias | — | **Not implemented.** No parser reads via records and `Board` has no field for them. |
-| Toolbar ▸ Undo / Redo | — | **Not implemented.** |
-| Recent Files ▸ Remove From List | — | **Not implemented.** |
-| Tabs: Main / Boardview / Schematic / Firmware | Main only | Schematic and Firmware are stubs in the original too — it ships the string `{0} is under development.` |
-| ESC closes the open board | ESC clears the selection | **Different binding.** |
-| File ▸ Exit, Check for Updates, Report an Error | — | No updater and no installer in a browser. |
-| Options ▸ one instance, full screen, GDI/Direct2D, GDI quality, update modes | — | Not applicable to a browser; the Graphics tab drives the renderer switch the canvas actually has. |
-
-### What was verified
-
-57 controls were driven programmatically — every toolbar button, panel tab,
-layer toggle, dock item, canvas control, inspector tab and every menu item
-including submenus — and each was checked for an observable effect.
-
-**No dead controls.** 45 produce a visible change; the other 9 are accounted for
-individually: three are already in the target state (fit while fitted, Find while
-already on Find), three are `display: none` at desktop width, two open a native
-file picker that headless automation cannot drive (the load path behind them was
-tested directly by feeding the input a real `.cst` — it parses, reports 145 B /
-CST, and a junk file correctly reports *Format not supported* while keeping the
-previous board), and one is a probe artifact.
-
-## Known limits
-
-- **FZ and CAE** are not supported, as above.
-- **Board drawing colours are an assumption.** The original builds them from float constants inside the encrypted pool, and no available screenshot shows a loaded board. This build uses the industry convention — top side red, bottom side blue.
-- **CST pad advance** is ambiguous in the format (10 vs 12); the reader assumes 10.
-- **No part catalogue.** 2.0.1.9 added a SQLite/Volante-backed parts database with brand and category browsing. It is not reproduced, and there is no online lookup.
-- **No vendor keys.** The FZ/CAE key databases and the XZZPCB XOR key are deliberately absent.
-
-## Built with AI assistance
-
-This was built in an assisted session with WorkBuddy AI. The reverse-engineering tooling — the ECMA-335 metadata reader, the IL splitter, the PDF image extractor, the cross-viewport CDP test harness — was written during that session too, and it is what produced the findings above. Saying so seems more useful than pretending otherwise.
+---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-Not affiliated with, endorsed by, or derived from the BoardViewer authors. Trademarks and format names belong to their respective owners. This is an independent reader for file formats, written from observation of files and of publicly shipped documentation.
+BareBoard is an independent open-source boardview reader for inspecting PCB layouts locally in the browser and is not affiliated with or endorsed by third-party viewer vendors or hardware manufacturers. Trademarks belong to their respective owners.

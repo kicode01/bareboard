@@ -3,18 +3,18 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "BareBoard - offline-capable boardview viewer PWA. Independent reimplementation of the BoardViewer feature set.",
+  "description": "Offline-capable 2D CAD, 2D Realistic, and interactive 3D PCB boardview viewer PWA.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "check": "npm run typecheck && npm run validate && npm run build"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@fontsource-variable/inter": "^5.3.0",
-    "@material-symbols/svg-400": "^0.49.0",
     "@tanstack/react-virtual": "^3.14.26",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

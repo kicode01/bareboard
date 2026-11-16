@@ -21,9 +21,8 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('lucide-react')) return 'vendor-icons';
             if (id.includes('@base-ui')) return 'vendor-baseui';
-            if (id.includes('vaul') || id.includes('@radix-ui') || id.includes('cmdk') || id.includes('@tanstack')) {
+            if (id.includes('vaul') || id.includes('cmdk') || id.includes('@tanstack')) {
               return 'vendor-interactive';
             }
             return 'vendor';

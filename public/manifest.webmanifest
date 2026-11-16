@@ -1,7 +1,7 @@
 {
   "name": "BareBoard",
   "short_name": "BareBoard",
-  "description": "Offline boardview viewer: open a bare board, trace a net, inspect a part. .brd/.bdv/.bvr/.cad/.cst/.asc.",
+  "description": "Offline 2D/3D PCB boardview viewer: inspect parts, pinouts, and trace nets in .brd, .brd2, .bdv, .bvr, .bvr3, .cad, .cst, .asc, and .zip files.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
