@@ -1,11 +1,14 @@
 import type { Board, Layers } from '../types';
+import type { RenderMode } from '../render/realistic3d';
 
 interface Props {
   board: Board | null;
   layers: Layers;
+  renderMode: RenderMode;
   partNames: string[];
   netNames: string[];
   onSelectSide: (side: 'top' | 'bottom' | 'both') => void;
+  onRenderMode: (mode: RenderMode) => void;
   onOpenFile: () => void;
   onOpenFolder: () => void;
   onDemo: () => void;
@@ -81,6 +84,24 @@ export function Toolbar(p: Props) {
         aria-pressed={p.layers.top && p.layers.bottom} onClick={() => p.onSelectSide('both')}
         title="Overlay both sides">
         Both
+      </button>
+
+      <span className="tb-sep" aria-hidden="true" />
+
+      <button type="button" className={`tb-side${p.renderMode === 'cad' ? ' on' : ''}`}
+        aria-pressed={p.renderMode === 'cad'} onClick={() => p.onRenderMode('cad')}
+        title="2D CAD technical footprints (V)">
+        2D CAD
+      </button>
+      <button type="button" className={`tb-side${p.renderMode === 'realistic' ? ' on' : ''}`}
+        aria-pressed={p.renderMode === 'realistic'} onClick={() => p.onRenderMode('realistic')}
+        title="2D Realistic physical component figures (V)">
+        2D Real
+      </button>
+      <button type="button" className={`tb-side${p.renderMode === '3d' ? ' on' : ''}`}
+        aria-pressed={p.renderMode === '3d'} onClick={() => p.onRenderMode('3d')}
+        title="Interactive 3D extruded PCB & components (3)">
+        3D View
       </button>
 
       <span className="tb-sep" aria-hidden="true" />

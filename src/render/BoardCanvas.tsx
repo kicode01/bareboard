@@ -4,6 +4,15 @@ import type { Board, Layers, Part, Point, Selection, Side } from '../types';
 import type { BoardIndex } from '../lib/search';
 import type { Palette } from '../lib/theme';
 import { fitView, focusBounds, makeTransform, pointInPolygon, zoomAt, type View } from '../lib/geometry';
+import {
+  BOARD_HALF_THICKNESS_MIL,
+  classifyPartPackage,
+  drawRealistic2DPart,
+  makeProjector3D,
+  renderBoard3D,
+  type Camera3D,
+  type RenderMode,
+} from './realistic3d';
 
 function sideVisible(side: Side, layers: Layers): boolean {
   if (side === 'top') return layers.top;
@@ -49,6 +58,7 @@ interface Props {
   flipX: boolean;
   flipY: boolean;
   rotation: number;
+  renderMode: RenderMode;
   selection: Selection | null;
   highlightNet: string | null;
   focusParts: Set<number>;
@@ -70,13 +80,24 @@ function gridStep(scale: number): number {
 }
 
 export function BoardCanvas(props: Props) {
-  const { board, index, layers, view, flipX, flipY, rotation, selection, highlightNet, focusParts,
+  const { board, index, layers, view, flipX, flipY, rotation, renderMode, selection, highlightNet, focusParts,
     onView, onSelect, onCursor, onFit, onRotate, onFlip, fitToken, focusToken, centerSelectToken, palette } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
+  const drag = useRef<{
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+    pitchDeg: number;
+    yawDeg: number;
+    orbiting: boolean;
+    moved: boolean;
+  } | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<Hover | null>(null);
+  const [cam3d, setCam3d] = useState<Camera3D>({ pitchDeg: 52, yawDeg: -18 });
+  const [dragMode3d, setDragMode3d] = useState<'orbit' | 'pan'>('orbit');
 
   // --- touch state -----------------------------------------------------------
   const pointers = useRef<Map<number, Point>>(new Map());
@@ -100,6 +121,13 @@ export function BoardCanvas(props: Props) {
     [board, size.w, size.h, view, flipX, flipY, rotation],
   );
 
+  const proj3d = useMemo(
+    () => (board && size.w && size.h && renderMode === '3d'
+      ? makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, cam3d)
+      : null),
+    [board, size.w, size.h, view, flipX, flipY, rotation, renderMode, cam3d],
+  );
+
   // Refs keep the fit / focus effects stable: they fire only when App increments their tokens.
   const onViewRef = useRef(onView); onViewRef.current = onView;
   const boardRef = useRef(board); boardRef.current = board;
@@ -117,7 +145,6 @@ export function BoardCanvas(props: Props) {
   }, [fitToken]);
 
   // OpenBoardView CenterZoomSearchResults / CenterZoomNet equivalent:
-  // centers (and zooms in when zoomed out) on the chosen part, pin, nail, or net.
   useEffect(() => {
     if (focusToken <= 0 || !boardRef.current || !sizeRef.current.w) return;
     const b = boardRef.current;
@@ -151,9 +178,10 @@ export function BoardCanvas(props: Props) {
       }
     }
     if (box) {
-      onViewRef.current(focusBounds(b, box, w, h, viewRef.current.scale, fx, fy, rot));
+      const effRot = renderMode === '3d' ? rot + cam3d.yawDeg : rot;
+      onViewRef.current(focusBounds(b, box, w, h, viewRef.current.scale, fx, fy, effRot));
     }
-  }, [focusToken]);
+  }, [focusToken, renderMode, cam3d.yawDeg]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -180,6 +208,34 @@ export function BoardCanvas(props: Props) {
       return;
     }
 
+    const isClassic = palette.bg === '#ffffff';
+    const isRealistic = renderMode === 'realistic';
+
+    // --- 3D EXTRUDED BOARD RENDERER -------------------------------------------
+    if (renderMode === '3d' && proj3d) {
+      renderBoard3D(
+        ctx, board, index, layers, view, size, tr, proj3d,
+        selection, highlightNet, focusParts, palette, isClassic,
+      );
+
+      // Scale bar at bottom-left
+      const barMils = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((v) => v * view.scale >= 70) ?? 5000;
+      const barPx = barMils * view.scale;
+      ctx.strokeStyle = palette.scaleText;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(20, h - 22); ctx.lineTo(20 + barPx, h - 22);
+      ctx.moveTo(20, h - 27); ctx.lineTo(20, h - 17);
+      ctx.moveTo(20 + barPx, h - 27); ctx.lineTo(20 + barPx, h - 17);
+      ctx.stroke();
+      ctx.fillStyle = palette.scaleText;
+      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`3D · ${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
+      return;
+    }
+
+    // --- 2D CAD & 2D REALISTIC RENDERERS --------------------------------------
     const S = (p: Point) => tr.toScreen(p);
     const visible = [tr.toWorld(0, 0), tr.toWorld(w, 0), tr.toWorld(0, h), tr.toWorld(w, h)];
     const minX = Math.min(...visible.map((p) => p.x)), maxX = Math.max(...visible.map((p) => p.x));
@@ -203,8 +259,6 @@ export function BoardCanvas(props: Props) {
     }
 
     // Multi-contour board outline (ported from OpenBoardView DrawOutlinePoints & DrawOutlineSegments).
-    // When a sub-contour closes back onto its start point `fp`, jump (`moveTo`) to the next contour
-    // rather than drawing a spurious line across internal cutouts or screw holes.
     if (layers.outline && (board.outline.length > 1 || (board.outlineSegments && board.outlineSegments.length > 0))) {
       ctx.beginPath();
       if (board.outline.length > 1) {
@@ -235,11 +289,13 @@ export function BoardCanvas(props: Props) {
         }
       }
       if (board.outline.length > 2) {
-        ctx.fillStyle = palette.outlineFill;
+        ctx.fillStyle = isRealistic
+          ? (isClassic ? 'rgba(18, 82, 54, 0.88)' : 'rgba(13, 36, 40, 0.88)')
+          : palette.outlineFill;
         ctx.fill('evenodd');
       }
-      ctx.strokeStyle = palette.outlineStroke;
-      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = isRealistic ? '#d4af37' : palette.outlineStroke;
+      ctx.lineWidth = isRealistic ? 2 : 1.6;
       ctx.stroke();
     }
 
@@ -276,7 +332,6 @@ export function BoardCanvas(props: Props) {
             : (info.pinIndices.find((idx) => sideVisible(board.pins[idx].side, layers)) ?? info.pinIndices[0]);
           const o = S(board.pins[hubIdx]);
 
-          // Same-side visible airwires
           ctx.strokeStyle = palette.netActive;
           ctx.lineWidth = 1.25;
           ctx.beginPath();
@@ -288,7 +343,6 @@ export function BoardCanvas(props: Props) {
           }
           ctx.stroke();
 
-          // Cross-side airwires + ghost target rings when connected pins sit on the hidden side
           const hiddenPins = info.pinIndices.filter((idx) => idx !== hubIdx && !sideVisible(board.pins[idx].side, layers));
           if (hiddenPins.length > 0 && hiddenPins.length <= 60) {
             ctx.save();
@@ -311,7 +365,7 @@ export function BoardCanvas(props: Props) {
       }
     }
 
-    // Test nails / vias (scaled in world units so they do not clutter zoomed-out boards).
+    // Test nails / vias
     if (layers.nails) {
       const r = Math.max(0.85, Math.min(4.2, 6 * view.scale));
       ctx.beginPath();
@@ -329,96 +383,10 @@ export function BoardCanvas(props: Props) {
       ctx.globalAlpha = 1;
     }
 
-    // Component bodies (ported from OpenBoardView DrawParts: 4-point oriented quads,
-    // VHConvexHull contours, radial electrolytic capacitor circles, and selection dimming).
-    interface PartShape {
-      part: Part;
-      i: number;
-      quad: Point[];
-      cx: number;
-      cy: number;
-      minSX: number;
-      maxSX: number;
-      minSY: number;
-      maxSY: number;
-      focused: boolean;
-      selected: boolean;
-    }
-    const partShapes: PartShape[] = [];
-    const selectedPinPart = selection?.kind === 'pin' ? board.pins[selection.index]?.part : 0;
-
-    board.parts.forEach((part, i) => {
-      if (part.isDummy || !part.box || !sideVisible(part.side, layers)) return;
-      const poly = partPoly(part);
-      if (!poly) return;
-      const quad = poly.map(S);
-      let minSX = Infinity, maxSX = -Infinity, minSY = Infinity, maxSY = -Infinity;
-      let cx = 0, cy = 0;
-      for (const pt of quad) {
-        if (pt.x < minSX) minSX = pt.x;
-        if (pt.x > maxSX) maxSX = pt.x;
-        if (pt.y < minSY) minSY = pt.y;
-        if (pt.y > maxSY) maxSY = pt.y;
-        cx += pt.x;
-        cy += pt.y;
-      }
-      cx /= quad.length;
-      cy /= quad.length;
-      if (maxSX < -10 || minSX > w + 10 || maxSY < -10 || minSY > h + 10) return;
-
-      const focused = focusParts.has(i);
-      const selected = (selection?.kind === 'part' && selection.index === i) || selectedPinPart === i + 1;
-      const onActiveNet = Boolean(activeNetInfo && activeNetInfo.partIds.has(i + 1));
-      const highlighted = selected || focused || onActiveNet;
-
-      ctx.save();
-      if (hasFilter && !highlighted) ctx.globalAlpha = 0.44;
-
-      // Convex hull of pins (OpenBoardView VHConvexHull) when part is selected/focused
-      if (part.hull && part.hull.length >= 3 && (selected || focused)) {
-        ctx.beginPath();
-        part.hull.forEach((hp, idx) => {
-          const s = S(hp);
-          if (idx === 0) ctx.moveTo(s.x, s.y);
-          else ctx.lineTo(s.x, s.y);
-        });
-        ctx.closePath();
-        ctx.strokeStyle = palette.partHull;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-      }
-
-      // Oriented 4-point bounding polygon
-      ctx.beginPath();
-      quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-      ctx.closePath();
-      ctx.fillStyle = focused || selected ? palette.partFillFocus
-        : (part.side === 'bottom' ? palette.partFillBottom : palette.partFill);
-      ctx.fill();
-      ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active
-        : (part.side === 'bottom' ? palette.partStrokeBottom : palette.partStroke);
-      ctx.lineWidth = selected ? 2 : focused ? 1.6 : 1.05;
-      ctx.stroke();
-
-      // Radial electrolytic capacitor circle (OpenBoardView part.expanse > 90)
-      if (part.expanse && part.expanse > 90 && part.center) {
-        const sc = S(part.center);
-        const cr = part.expanse * 0.33 * view.scale;
-        if (cr > 1.5) {
-          ctx.beginPath();
-          ctx.arc(sc.x, sc.y, cr, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-
-      partShapes.push({ part, i, quad, cx, cy, minSX, maxSX, minSY, maxSY, focused, selected });
-    });
-
-    // Pins (ported from OpenBoardView DrawPins: hollow pin rings with subtle fill so dense BGA
-    // grids stay crisp, semantic colors for Pin 1/A1, GND, NC, TestPads, selection dimming, and
-    // zoomed-in inside-pin number + net labels).
-    if (layers.pins) {
+    // In Realistic 2D mode, draw pins BEFORE X-Ray translucent component packages
+    // (or draw pads under + crisp ring on top) so components sit over their PCB pads!
+    const drawPins2D = () => {
+      if (!layers.pins) return;
       type PinBucket = 'top' | 'bottom' | 'both' | 'gnd' | 'nc' | 'testPad' | 'pin1';
       interface ScreenPin {
         idx: number;
@@ -485,8 +453,8 @@ export function BoardCanvas(props: Props) {
           ctx.moveTo(sp.sx + sp.r, sp.sy);
           ctx.arc(sp.sx, sp.sy, sp.r, 0, Math.PI * 2);
         }
-        ctx.fillStyle = strokeColor;
-        ctx.globalAlpha = fillAlpha * dimFactor;
+        ctx.fillStyle = isRealistic && (strokeColor === palette.top) ? '#d4af37' : strokeColor;
+        ctx.globalAlpha = (isRealistic ? fillAlpha + 0.16 : fillAlpha) * dimFactor;
         ctx.fill();
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = Math.min(1.65, Math.max(0.85, arr[0].r * 0.25));
@@ -495,7 +463,6 @@ export function BoardCanvas(props: Props) {
         ctx.globalAlpha = 1;
       };
 
-      // Render semantic buckets in order: NC -> GND -> Both -> Bottom -> Top -> TestPad -> Pin 1
       drawBucket(buckets.nc, palette.pinNc, 0.18, 0.65);
       drawBucket(buckets.gnd, palette.pinGround, 0.26, 0.82);
       drawBucket(buckets.both, palette.both, 0.28, 0.85);
@@ -503,7 +470,6 @@ export function BoardCanvas(props: Props) {
       drawBucket(buckets.top, palette.top, 0.26, 0.92);
       drawBucket(buckets.testPad, palette.pinTestPad, 0.48, 0.95);
 
-      // Pin 1 / BGA A1 markers: drawn with a distinct ring + square pad collar when zoomed in
       if (buckets.pin1.length) {
         const dimFactor = hasFilter ? 0.55 : 1;
         ctx.save();
@@ -517,7 +483,7 @@ export function BoardCanvas(props: Props) {
           }
         }
         ctx.fillStyle = palette.pinA1;
-        ctx.globalAlpha = 0.34 * dimFactor;
+        ctx.globalAlpha = 0.38 * dimFactor;
         ctx.fill();
         ctx.strokeStyle = palette.pinA1;
         ctx.lineWidth = Math.min(1.8, Math.max(1.0, buckets.pin1[0].r * 0.28));
@@ -526,7 +492,6 @@ export function BoardCanvas(props: Props) {
         ctx.restore();
       }
 
-      // Active / Same-Net and Selected pins rendered brightly on top
       if (highlightedPins.length) {
         ctx.save();
         for (const sp of highlightedPins) {
@@ -548,8 +513,6 @@ export function BoardCanvas(props: Props) {
         ctx.restore();
       }
 
-      // Inside-pin text (ported from OpenBoardView DrawPins lines 2349-2435):
-      // Shows pin number/name inside the pad when zoomed in, plus net name when zoomed closer.
       if (labeledPins.length && labeledPins.length <= 650) {
         ctx.save();
         ctx.textAlign = 'center';
@@ -582,11 +545,102 @@ export function BoardCanvas(props: Props) {
         }
         ctx.restore();
       }
-    }
+    };
 
-    // Component labels: aligned along the oriented 4-point bounding quad's long edge
-    // (ported from OpenBoardView DrawPartName, lines 2745-2795), plus a floating callout
-    // pill above selected/focused parts when their footprint is small on screen.
+    // Component bodies
+    interface PartShape {
+      part: Part;
+      i: number;
+      quad: Point[];
+      cx: number;
+      cy: number;
+      minSX: number;
+      maxSX: number;
+      minSY: number;
+      maxSY: number;
+      focused: boolean;
+      selected: boolean;
+    }
+    const partShapes: PartShape[] = [];
+    const selectedPinPart = selection?.kind === 'pin' ? board.pins[selection.index]?.part : 0;
+
+    board.parts.forEach((part, i) => {
+      if (part.isDummy || !part.box || !sideVisible(part.side, layers)) return;
+      const poly = partPoly(part);
+      if (!poly) return;
+      const quad = poly.map(S);
+      let minSX = Infinity, maxSX = -Infinity, minSY = Infinity, maxSY = -Infinity;
+      let cx = 0, cy = 0;
+      for (const pt of quad) {
+        if (pt.x < minSX) minSX = pt.x;
+        if (pt.x > maxSX) maxSX = pt.x;
+        if (pt.y < minSY) minSY = pt.y;
+        if (pt.y > maxSY) maxSY = pt.y;
+        cx += pt.x;
+        cy += pt.y;
+      }
+      cx /= quad.length;
+      cy /= quad.length;
+      if (maxSX < -10 || minSX > w + 10 || maxSY < -10 || minSY > h + 10) return;
+
+      const focused = focusParts.has(i);
+      const selected = (selection?.kind === 'part' && selection.index === i) || selectedPinPart === i + 1;
+      const onActiveNet = Boolean(activeNetInfo && activeNetInfo.partIds.has(i + 1));
+      const highlighted = selected || focused || onActiveNet;
+
+      if (isRealistic) {
+        const spec = classifyPartPackage(part);
+        drawRealistic2DPart(
+          ctx, part, quad, cx, cy, spec, S, view.scale,
+          selected, focused, hasFilter && !highlighted, palette,
+        );
+      } else {
+        ctx.save();
+        if (hasFilter && !highlighted) ctx.globalAlpha = 0.44;
+
+        if (part.hull && part.hull.length >= 3 && (selected || focused)) {
+          ctx.beginPath();
+          part.hull.forEach((hp, idx) => {
+            const s = S(hp);
+            if (idx === 0) ctx.moveTo(s.x, s.y);
+            else ctx.lineTo(s.x, s.y);
+          });
+          ctx.closePath();
+          ctx.strokeStyle = palette.partHull;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+
+        ctx.beginPath();
+        quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+        ctx.closePath();
+        ctx.fillStyle = focused || selected ? palette.partFillFocus
+          : (part.side === 'bottom' ? palette.partFillBottom : palette.partFill);
+        ctx.fill();
+        ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active
+          : (part.side === 'bottom' ? palette.partStrokeBottom : palette.partStroke);
+        ctx.lineWidth = selected ? 2 : focused ? 1.6 : 1.05;
+        ctx.stroke();
+
+        if (part.expanse && part.expanse > 90 && part.center) {
+          const sc = S(part.center);
+          const cr = part.expanse * 0.33 * view.scale;
+          if (cr > 1.5) {
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, cr, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+
+      partShapes.push({ part, i, quad, cx, cy, minSX, maxSX, minSY, maxSY, focused, selected });
+    });
+
+    // Draw pins on top (X-Ray overlay) so every BGA ball and pad is visible and clickable
+    drawPins2D();
+
+    // Component labels
     if (layers.labels) {
       const isDenseBoard = board.parts.length > 40;
       ctx.textAlign = 'center';
@@ -602,7 +656,6 @@ export function BoardCanvas(props: Props) {
         if (angle > Math.PI / 2) angle -= Math.PI;
         if (angle < -Math.PI / 2) angle += Math.PI;
 
-        // OpenBoardView 70% footprint text sizing rule
         const maxFontW = (longSide * 0.72) / Math.max(1, part.name.length * 0.6);
         const maxFontH = shortSide * 0.68;
         const fontPx = Math.min(12.5, Math.floor(Math.min(maxFontW, maxFontH)));
@@ -616,16 +669,16 @@ export function BoardCanvas(props: Props) {
           ctx.translate(cx, cy);
           ctx.rotate(angle);
           ctx.font = `700 ${fontPx}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-          ctx.strokeStyle = palette.bg;
+          ctx.strokeStyle = isRealistic ? 'rgba(0, 0, 0, 0.85)' : palette.bg;
           ctx.lineWidth = 2.8;
           ctx.lineJoin = 'round';
           ctx.strokeText(part.name, 0, 0);
           ctx.fillStyle = focused || selected ? palette.labelFocus
+            : isRealistic ? '#f8fafc'
             : (part.side === 'bottom' ? palette.labelBottom : palette.label);
           ctx.fillText(part.name, 0, 0);
           ctx.restore();
         } else if (selected || focused) {
-          // Floating callout pill for small selected/focused SMD passives
           ctx.save();
           ctx.font = '700 10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
           const tw = ctx.measureText(part.name).width + 10;
@@ -678,7 +731,7 @@ export function BoardCanvas(props: Props) {
       }
     }
 
-    // Centre crosshair (the original app's "+" mark) + scale bar.
+    // Centre crosshair + scale bar.
     ctx.strokeStyle = palette.crosshair;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 7]);
@@ -706,15 +759,49 @@ export function BoardCanvas(props: Props) {
     ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`${barMils} mil  /  ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
-  }, [board, index, layers, view, size, tr, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
+  }, [board, index, layers, view, size, tr, proj3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
 
   const localPoint = (e: ReactPointerEvent | ReactWheelEvent | ReactMouseEvent): Point => {
     const r = canvasRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
+  // Pin & test-nail hit testing (works seamlessly in both 2D and 3D modes!)
   const nearest = useCallback((sx: number, sy: number) => {
     if (!board || !tr) return null;
+
+    if (renderMode === '3d' && proj3d) {
+      const best3d = { kind: 'pin' as 'pin' | 'nail', index: -1, d: Infinity };
+      if (layers.pins) {
+        board.pins.forEach((pin, i) => {
+          if (!sideVisible(pin.side, layers)) return;
+          const z = pin.side === 'bottom' ? -BOARD_HALF_THICKNESS_MIL : BOARD_HALF_THICKNESS_MIL;
+          const sp = proj3d.project3D(pin, z);
+          const hitPx = Math.max(12, pin.radius * view.scale * sp.persp * 1.1);
+          const d = Math.hypot(sp.x - sx, sp.y - sy);
+          if (d < hitPx && d < best3d.d) {
+            best3d.kind = 'pin';
+            best3d.index = i;
+            best3d.d = d;
+          }
+        });
+      }
+      if (layers.nails) {
+        board.nails.forEach((nail, i) => {
+          if (!sideVisible(nail.side, layers)) return;
+          const z = nail.side === 'bottom' ? -BOARD_HALF_THICKNESS_MIL : BOARD_HALF_THICKNESS_MIL;
+          const sp = proj3d.project3D(nail, z);
+          const d = Math.hypot(sp.x - sx, sp.y - sy);
+          if (d < 12 && d < best3d.d) {
+            best3d.kind = 'nail';
+            best3d.index = i;
+            best3d.d = d;
+          }
+        });
+      }
+      return best3d.index >= 0 ? best3d : null;
+    }
+
     const world = tr.toWorld(sx, sy);
     const limit = 14 / view.scale;
     const best = { kind: 'pin' as 'pin' | 'nail', index: -1, d: Infinity };
@@ -734,7 +821,32 @@ export function BoardCanvas(props: Props) {
       });
     }
     return best.index >= 0 ? best : null;
-  }, [board, tr, view.scale, layers]);
+  }, [board, tr, proj3d, renderMode, view.scale, layers]);
+
+  // Component polygon hit-testing in both 2D and 3D (checks both 3D roof and 3D base footprint!)
+  const findPartAtScreen = useCallback((sx: number, sy: number): number => {
+    if (!board || !tr) return -1;
+    if (renderMode === '3d' && proj3d) {
+      const screenPt: Point = { x: sx, y: sy };
+      for (let i = 0; i < board.parts.length; i++) {
+        const part = board.parts[i];
+        if (part.isDummy || !part.box || !sideVisible(part.side, layers)) continue;
+        const poly = partPoly(part);
+        if (!poly) continue;
+        const spec = classifyPartPackage(part);
+        const zBase = part.side === 'bottom' ? -BOARD_HALF_THICKNESS_MIL : BOARD_HALF_THICKNESS_MIL;
+        const zRoof = zBase + (part.side === 'bottom' ? -spec.heightMil : spec.heightMil);
+        const roofQuad = poly.map((pt) => proj3d.project3D(pt, zRoof));
+        const baseQuad = poly.map((pt) => proj3d.project3D(pt, zBase));
+        if (pointInPolygon(screenPt, roofQuad) || pointInPolygon(screenPt, baseQuad)) {
+          return i;
+        }
+      }
+      return -1;
+    }
+    const world = tr.toWorld(sx, sy);
+    return board.parts.findIndex((part) => hitTestPart(part, world, layers));
+  }, [board, tr, proj3d, renderMode, layers]);
 
   // "E / Enter" selects whatever sits under the centre crosshair.
   const lastCenter = useRef(0);
@@ -747,17 +859,16 @@ export function BoardCanvas(props: Props) {
       onSelect({ kind: hit.kind, index: hit.index, key: `${hit.kind}:${hit.index}` });
       return;
     }
-    if (!tr) return;
-    const world = tr.toWorld(size.w / 2, size.h / 2);
-    const partIndex = board.parts.findIndex((part) => hitTestPart(part, world, layers));
+    const partIndex = findPartAtScreen(size.w / 2, size.h / 2);
     onSelect(partIndex >= 0 ? { kind: 'part', index: partIndex, key: `part:${partIndex}` } : null);
-  }, [centerSelectToken, nearest, board, tr, onSelect, size.w, size.h, layers]);
+  }, [centerSelectToken, nearest, findPartAtScreen, board, onSelect, size.w, size.h]);
 
   const onWheel = (e: ReactWheelEvent) => {
     e.preventDefault();
     if (!board) return;
     const p = localPoint(e);
-    onView(zoomAt(view, e.deltaY < 0 ? 1.18 : 1 / 1.18, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
+    const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
+    onView(zoomAt(view, e.deltaY < 0 ? 1.18 : 1 / 1.18, p.x, p.y, size.w, size.h, board, flipX, flipY, effRot));
   };
 
   const quick = useRef<{ view: View } | null>(null);
@@ -789,7 +900,8 @@ export function BoardCanvas(props: Props) {
 
     if (e.button === 2 && board) {
       quick.current = { view };
-      onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
+      const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
+      onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, effRot));
       return;
     }
 
@@ -800,13 +912,24 @@ export function BoardCanvas(props: Props) {
           longPress.current = null;
           quick.current = { view };
           setMagnifying(true);
-          onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
+          const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
+          onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, effRot));
         }, 420),
       };
     }
 
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, y: e.clientY, panX: view.panX, panY: view.panY, moved: false };
+    const orbiting = renderMode === '3d' && (e.shiftKey || e.button === 1 || dragMode3d === 'orbit');
+    drag.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: view.panX,
+      panY: view.panY,
+      pitchDeg: cam3d.pitchDeg,
+      yawDeg: cam3d.yawDeg,
+      orbiting,
+      moved: false,
+    };
   };
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -818,9 +941,10 @@ export function BoardCanvas(props: Props) {
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const base = pinch.current;
-      const z = zoomAt(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, rotation);
+      const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
+      const z = zoomAt(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, effRot);
       onView({ ...z, panX: z.panX + (mx - base.mx), panY: z.panY + (my - base.my) });
-      onCursor(tr?.toWorld(mx, my) ?? null);
+      onCursor(proj3d ? proj3d.unprojectToPlane(mx, my, 0) : (tr?.toWorld(mx, my) ?? null));
       return;
     }
 
@@ -829,11 +953,18 @@ export function BoardCanvas(props: Props) {
     if (drag.current) {
       const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
-      onView({ ...view, panX: drag.current.panX + dx, panY: drag.current.panY + dy });
-      onCursor(tr?.toWorld(p.x, p.y) ?? null);
+      if (drag.current.orbiting) {
+        setCam3d({
+          yawDeg: ((drag.current.yawDeg + dx * 0.45 + 540) % 360) - 180,
+          pitchDeg: Math.max(0, Math.min(76, drag.current.pitchDeg - dy * 0.35)),
+        });
+      } else {
+        onView({ ...view, panX: drag.current.panX + dx, panY: drag.current.panY + dy });
+      }
+      onCursor(proj3d ? proj3d.unprojectToPlane(p.x, p.y, 0) : (tr?.toWorld(p.x, p.y) ?? null));
       return;
     }
-    onCursor(tr?.toWorld(p.x, p.y) ?? null);
+    onCursor(proj3d ? proj3d.unprojectToPlane(p.x, p.y, 0) : (tr?.toWorld(p.x, p.y) ?? null));
     if (e.pointerType === 'touch') { setHover(null); return; }
     if (!layers.tooltip) { setHover(null); return; }
     const hit = nearest(p.x, p.y);
@@ -867,16 +998,16 @@ export function BoardCanvas(props: Props) {
       }
       return;
     }
-    if (board && tr) {
-      const world = tr.toWorld(p.x, p.y);
-      const partIdx = board.parts.findIndex((part) => hitTestPart(part, world, layers));
+    if (board) {
+      const partIdx = findPartAtScreen(p.x, p.y);
       if (partIdx >= 0) {
         const part = board.parts[partIdx];
+        const spec = classifyPartPackage(part);
         setHover({
-          sx: p.x, sy: p.y, title: `PART ${part.name}`,
+          sx: p.x, sy: p.y, title: `PART ${part.name} (${spec.kind.toUpperCase()})`,
           lines: [
             `PINS  ${Math.max(0, part.pinEnd - part.pinStart)}`,
-            `SIDE  ${part.side.toUpperCase()} · ${part.type}`,
+            `SIDE  ${part.side.toUpperCase()} · ${part.type.toUpperCase()}`,
           ],
         });
         return;
@@ -909,10 +1040,8 @@ export function BoardCanvas(props: Props) {
       onSelect({ kind: hit.kind, index: hit.index, key: `${hit.kind}:${hit.index}` });
       return;
     }
-    // Fall back to selecting a component body under the pointer using oriented polygon hit-testing.
-    if (board && tr) {
-      const world = tr.toWorld(p.x, p.y);
-      const partIndex = board.parts.findIndex((part) => hitTestPart(part, world, layers));
+    if (board) {
+      const partIndex = findPartAtScreen(p.x, p.y);
       if (partIndex >= 0) { onSelect({ kind: 'part', index: partIndex, key: `part:${partIndex}` }); return; }
     }
     onSelect(null);
@@ -929,7 +1058,8 @@ export function BoardCanvas(props: Props) {
 
   const zoom = (factor: number) => {
     if (!board) return;
-    onView(zoomAt(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, rotation));
+    const effRot = renderMode === '3d' ? rotation + cam3d.yawDeg : rotation;
+    onView(zoomAt(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, effRot));
   };
 
   const realPartCount = useMemo(
@@ -962,6 +1092,62 @@ export function BoardCanvas(props: Props) {
         onContextMenu={(e: ReactMouseEvent) => e.preventDefault()}
         onDoubleClick={() => { if (lastPointerType.current !== 'touch') onFit(); }}
       />
+      {renderMode === '3d' && board && (
+        <div className="cam3d-bar" role="group" aria-label="3D camera controls">
+          <button
+            type="button"
+            className={dragMode3d === 'orbit' ? 'on' : ''}
+            onClick={() => setDragMode3d('orbit')}
+            title="Left-drag orbits the 3D board"
+          >
+            Orbit
+          </button>
+          <button
+            type="button"
+            className={dragMode3d === 'pan' ? 'on' : ''}
+            onClick={() => setDragMode3d('pan')}
+            title="Left-drag pans across the 3D board (Shift+drag still orbits)"
+          >
+            Pan
+          </button>
+          <span className="cam3d-sep" />
+          <button
+            type="button"
+            onClick={() => setCam3d((c) => ({ ...c, pitchDeg: Math.min(75, c.pitchDeg + 10) }))}
+            title="Tilt 3D camera steeper"
+          >
+            Tilt +
+          </button>
+          <button
+            type="button"
+            onClick={() => setCam3d((c) => ({ ...c, pitchDeg: Math.max(0, c.pitchDeg - 10) }))}
+            title="Flatten 3D camera tilt"
+          >
+            Tilt −
+          </button>
+          <button
+            type="button"
+            onClick={() => setCam3d((c) => ({ ...c, yawDeg: ((c.yawDeg - 25 + 540) % 360) - 180 }))}
+            title="Spin 3D turntable counter-clockwise"
+          >
+            ⟲
+          </button>
+          <button
+            type="button"
+            onClick={() => setCam3d((c) => ({ ...c, yawDeg: ((c.yawDeg + 25 + 540) % 360) - 180 }))}
+            title="Spin 3D turntable clockwise"
+          >
+            ⟳
+          </button>
+          <button
+            type="button"
+            onClick={() => setCam3d({ pitchDeg: 52, yawDeg: -18 })}
+            title="Reset 3D isometric angle"
+          >
+            Reset 3D
+          </button>
+        </div>
+      )}
       {magnifying && <div className="mag-badge" aria-hidden="true">MAGNIFIER 3× · RELEASE TO RETURN</div>}
       {hover && (
         <div className="canvas-tooltip" style={{ left: Math.min(hover.sx + 16, size.w - 220), top: Math.min(hover.sy + 16, size.h - 110) }}>

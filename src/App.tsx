@@ -14,6 +14,7 @@ import { MenuBar, buildMenus } from './components/MenuBar';
 import { OptionsDialog } from './components/OptionsDialog';
 import { Toolbar } from './components/Toolbar';
 import { BoardCanvas } from './render/BoardCanvas';
+import { classifyPartPackage, type RenderMode } from './render/realistic3d';
 
 const DEFAULT_LAYERS: Layers = {
   outline: true, pins: true, nails: false, labels: true, grid: true, nets: false, top: true, bottom: false,
@@ -87,6 +88,7 @@ export default function App() {
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
   const [rotation, setRotation] = useState(0);
+  const [renderMode, setRenderMode] = useState<RenderMode>('3d');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [highlightNet, setHighlightNet] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -374,6 +376,12 @@ export default function App() {
         case 'g': setLayers((l) => ({ ...l, grid: !l.grid })); break;
         case 't': setLayers((l) => ({ ...l, top: true, bottom: false })); break;
         case 'b': setLayers((l) => ({ ...l, top: false, bottom: true })); break;
+        case 'v':
+          setRenderMode((m) => (m === 'cad' ? 'realistic' : m === 'realistic' ? '3d' : 'cad'));
+          break;
+        case '3':
+          setRenderMode((m) => (m === '3d' ? 'realistic' : '3d'));
+          break;
         // "," and "." rotate anticlockwise / clockwise, as in the original.
         case ',': doRotate(-90); break;
         case '.': doRotate(90); break;
@@ -507,9 +515,10 @@ export default function App() {
         <MenuBar menus={menus} title={board ? `BareBoard — ${board.name}` : 'BareBoard'}
           subtitle={board ? board.format : undefined} />
         <Toolbar
-          board={board} layers={layers}
+          board={board} layers={layers} renderMode={renderMode}
           partNames={partNames} netNames={netNames}
           onSelectSide={selectSide}
+          onRenderMode={setRenderMode}
           onOpenFile={() => fileRef.current?.click()}
           onOpenFolder={() => dirRef.current?.click()}
           onDemo={() => void openFiles([demoFile()])}
@@ -692,7 +701,7 @@ export default function App() {
           <div className="canvas-tabs" role="tablist" aria-label="Board views">
             <button type="button" role="tab" aria-selected className="active">Main</button>
           </div>
-          <div className="stage-sides" role="group" aria-label="Board sides">
+          <div className="stage-sides" role="group" aria-label="Board sides and view mode">
             <button type="button" className={`side-pill top${layers.top && !layers.bottom ? ' on' : ''}`}
               aria-pressed={layers.top && !layers.bottom} onClick={() => selectSide('top')} title="Show top side only (T)">
               <i className="side-dot top" aria-hidden="true" />Top
@@ -705,8 +714,22 @@ export default function App() {
               aria-pressed={layers.top && layers.bottom} onClick={() => selectSide('both')} title="Overlay both sides">
               Both
             </button>
+            <span className="side-pill-sep" aria-hidden="true" />
+            <button type="button" className={`side-pill${renderMode === 'cad' ? ' on' : ''}`}
+              aria-pressed={renderMode === 'cad'} onClick={() => setRenderMode('cad')} title="2D CAD view (V)">
+              2D CAD
+            </button>
+            <button type="button" className={`side-pill${renderMode === 'realistic' ? ' on' : ''}`}
+              aria-pressed={renderMode === 'realistic'} onClick={() => setRenderMode('realistic')} title="2D Realistic component figures (V)">
+              2D Real
+            </button>
+            <button type="button" className={`side-pill${renderMode === '3d' ? ' on' : ''}`}
+              aria-pressed={renderMode === '3d'} onClick={() => setRenderMode('3d')} title="3D Extruded Board & Components (3)">
+              3D View
+            </button>
           </div>
           <div className="stage-hud" aria-hidden="true">
+            <span>MODE {renderMode.toUpperCase()}</span>
             <span>ZOOM {(view.scale * 1000).toFixed(0)}</span>
             <span>ROT {rotation}°</span>
             <span>{flipX || flipY ? `FLIP ${flipX ? 'H' : ''}${flipY ? 'V' : ''}` : 'FLIP —'}</span>
@@ -716,6 +739,7 @@ export default function App() {
             layers={{ ...layers, labels: layers.labels !== holdLabels }}
             view={view} onView={setView}
             flipX={flipX} flipY={flipY} rotation={rotation}
+            renderMode={renderMode}
             selection={selection} highlightNet={highlightNet} focusParts={focusParts}
             onSelect={handleSelect} onCursor={setCursor} onFit={doFit}
             onRotate={doRotate} onFlip={doFlip} fitToken={fitToken}
@@ -780,6 +804,7 @@ export default function App() {
               <div className="detail">
                 <div className="detail-head"><span className="badge part">PART</span><h2>{selectedPart.name}</h2></div>
                 <Row k="Side" v={selectedPart.side} />
+                <Row k="Package" v={classifyPartPackage(selectedPart).kind.toUpperCase()} />
                 <Row k="Mount" v={selectedPart.type} />
                 <Row k="Pins" v={selectedPart.pinEnd - selectedPart.pinStart} />
                 {selectedPart.box && <Row k="Footprint" v={`${mm(selectedPart.box.maxX - selectedPart.box.minX)} × ${mm(selectedPart.box.maxY - selectedPart.box.minY)} mm`} />}
@@ -1052,6 +1077,7 @@ function KeyMap({ touch }: { touch: boolean }) {
     ['A / W / S / D', 'Move centre mark'], ['Arrows', 'Pan board'], ['+ / − / wheel', 'Zoom'],
     ['E / Enter', 'Select under crosshair'], ['Tab', 'Cycle inspector tabs'],
     ['T / B', 'Toggle top / bottom side'],
+    ['V / 3', 'Cycle 2D CAD · 2D Real · 3D View'],
     ['H', 'Toggle labels'], ['Ctrl (hold)', 'Invert labels'], ['Right-drag', 'Magnifier'],
     ['Esc', 'Clear selection'],
   ];

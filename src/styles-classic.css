@@ -318,6 +318,21 @@ html[data-theme="classic"] ::-webkit-scrollbar-thumb:hover { background: #a6a6a6
   box-shadow: inset 0 1px 0 #fff;
 }
 .app[data-theme="classic"] .canvas-controls button:hover { background: #dcebfd; border-color: #3399ff; }
+.app[data-theme="classic"] .cam3d-bar {
+  background: #f0f0f0; border: 1px solid #898c95; border-radius: 3px;
+  box-shadow: 1px 1px 4px rgba(0, 0, 0, .2); backdrop-filter: none;
+}
+.app[data-theme="classic"] .cam3d-bar button {
+  color: #000; font-family: var(--sans); font-size: 11.5px; font-weight: 400;
+  border: 1px solid transparent; border-radius: 2px; padding: 3px 8px;
+}
+.app[data-theme="classic"] .cam3d-bar button:hover {
+  background: #dcebfd; border-color: #3399ff;
+}
+.app[data-theme="classic"] .cam3d-bar button.on {
+  background: #cce5ff; border-color: #0078d7; color: #003e75; font-weight: 600;
+}
+.app[data-theme="classic"] .cam3d-sep { background: #a0a0a0; }
 /* The toolbar already carries zoom/rotate/flip on a pointer device; the floating
    cluster is only needed where the toolbar is scrolled out of reach. */
 @media (min-width: 861px) {
