@@ -4,9 +4,9 @@
  */
 // Bump the suffix on every deploy: the activate handler drops older caches,
 // so without a bump an installed copy would keep serving the previous build.
-const CACHE = 'bareboard-v4';
+const CACHE = 'bareboard-v5';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg',
-               './icon-192.png', './icon-512.png'];
+               './favicon.ico', './apple-touch-icon.png', './icon-192.png', './icon-512.png', './maskable-512.png'];
 
 const scope = self.registration.scope;
 const url = (p) => new URL(p, scope).href;

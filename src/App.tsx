@@ -17,6 +17,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { ExplorerPanel, SAMPLES, type BatchRow, type RealPartEntry, type SampleSpec } from './components/ExplorerPanel';
 import { InspectorPanel } from './components/InspectorPanel';
 import { CanvasDock } from './components/CanvasDock';
+import { BrandMark } from '@/components/BrandMark';
 import { MaterialIcon } from '@/components/MaterialIcon';
 import { packageShortLabel } from './components/PackageGlyph';
 import { BoardCanvas, type BoardCanvasHandle } from './render/BoardCanvas';
@@ -136,7 +137,7 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
-  const [mobileSnap, setMobileSnap] = useState<number | string | null>(0.5);
+  const [mobileSnap, setMobileSnap] = useState<number | string | null>(0.45);
   const [classicSheet, setClassicSheet] = useState<'peek' | 'half' | 'full'>('peek');
 
   const [theme, setThemeState] = useState<Theme>(readTheme);
@@ -374,7 +375,7 @@ export default function App() {
       setRightOpen(true);
       if (isPhone) {
         setDrawerOpen(false);
-        setMobileSnap(0.5);
+        setMobileSnap(0.45);
         setMobileInspectorOpen(true);
         setClassicSheet((cur) => (cur === 'peek' ? 'half' : cur));
       }
@@ -897,9 +898,9 @@ export default function App() {
             <div className="brand flex shrink-0 items-center gap-2">
               <div
                 aria-hidden="true"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/75"
               >
-                <MaterialIcon name="developer_board" size={18} />
+                <BrandMark size={20} />
               </div>
               <span className="hidden sm:inline text-[13px] font-semibold tracking-tight text-foreground">
                 BareBoard
@@ -907,7 +908,7 @@ export default function App() {
             </div>
 
             <div
-              className="file-chip flex min-w-0 max-w-[180px] sm:max-w-[240px] items-center gap-1.5 rounded-md border border-border bg-secondary/70 px-2.5 py-1"
+              className="file-chip flex min-w-0 max-w-[125px] sm:max-w-[240px] items-center gap-1.5 rounded-md border border-border bg-secondary/70 px-2 py-1 sm:px-2.5"
               title={board ? `${board.name} (${board.format})` : 'No board loaded'}
             >
               <span className="min-w-0 truncate text-xs font-medium text-foreground">
@@ -1055,7 +1056,7 @@ export default function App() {
         <div
           className={cn(
             'workspace min-h-0 min-w-0',
-            theme !== 'classic' && !isPhone && 'grid transition-[grid-template-columns] duration-150',
+            theme !== 'classic' && !isPhone && 'grid',
             theme !== 'classic' && isPhone && 'grid grid-cols-1',
           )}
           style={desktopCols ? { gridTemplateColumns: desktopCols } : undefined}
@@ -1126,7 +1127,7 @@ export default function App() {
                     onClick={() => selectSide('top')}
                     title="Show top side only (T)"
                     className={cn(
-                      'inline-flex items-center rounded-md px-2.5 py-1 text-[11.5px] font-medium whitespace-nowrap transition-colors',
+                      'inline-flex items-center rounded-md px-2 py-1 sm:px-2.5 text-[11px] sm:text-[11.5px] font-medium whitespace-nowrap transition-colors',
                       layers.top && !layers.bottom
                         ? 'bg-primary/14 font-semibold text-primary'
                         : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -1140,7 +1141,7 @@ export default function App() {
                     onClick={() => selectSide('bottom')}
                     title="Show bottom side only (B)"
                     className={cn(
-                      'inline-flex items-center rounded-md px-2.5 py-1 text-[11.5px] font-medium whitespace-nowrap transition-colors',
+                      'inline-flex items-center rounded-md px-2 py-1 sm:px-2.5 text-[11px] sm:text-[11.5px] font-medium whitespace-nowrap transition-colors',
                       layers.bottom && !layers.top
                         ? 'bg-indigo-500/14 font-semibold text-indigo-600 dark:text-indigo-400'
                         : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -1154,7 +1155,7 @@ export default function App() {
                     onClick={() => selectSide('both')}
                     title="Overlay both sides"
                     className={cn(
-                      'inline-flex items-center rounded-md px-2.5 py-1 text-[11.5px] font-medium whitespace-nowrap transition-colors',
+                      'inline-flex items-center rounded-md px-2 py-1 sm:px-2.5 text-[11px] sm:text-[11.5px] font-medium whitespace-nowrap transition-colors',
                       layers.top && layers.bottom
                         ? 'bg-accent font-semibold text-foreground'
                         : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -1179,7 +1180,7 @@ export default function App() {
                       onClick={() => setRenderMode(mode)}
                       title={title}
                       className={cn(
-                        'inline-flex items-center rounded-md px-2.5 py-1 text-[11.5px] font-medium whitespace-nowrap transition-colors',
+                        'inline-flex items-center rounded-md px-2 py-1 sm:px-2.5 text-[11px] sm:text-[11.5px] font-medium whitespace-nowrap transition-colors',
                         renderMode === mode
                           ? 'bg-primary/14 font-semibold text-primary'
                           : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
@@ -1370,7 +1371,7 @@ export default function App() {
               open={mobileInspectorOpen}
               onOpenChange={setMobileInspectorOpen}
               modal={false}
-              snapPoints={[0.5, 0.88]}
+              snapPoints={[0.45, 0.88]}
               activeSnapPoint={mobileSnap}
               setActiveSnapPoint={setMobileSnap}
             >
@@ -1410,7 +1411,7 @@ export default function App() {
                     'flex flex-col overflow-hidden transition-[height] duration-200',
                     mobileSnap === 0.88
                       ? 'h-[calc(88dvh-138px-env(safe-area-inset-bottom))]'
-                      : 'h-[calc(50dvh-138px-env(safe-area-inset-bottom))]',
+                      : 'h-[calc(45dvh-138px-env(safe-area-inset-bottom))]',
                   )}
                 >
                   {inspectorNode(true)}
@@ -1474,7 +1475,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setMobileSnap(0.5);
+                  setMobileSnap(0.45);
                   setMobileInspectorOpen((v) => !v);
                 }}
                 className="flex h-8 w-full items-center justify-between gap-2 border-b border-border/70 bg-secondary/75 px-3 text-left"
@@ -1520,7 +1521,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     setLayersOpen(false);
-                    setMobileSnap(0.5);
+                    setMobileSnap(0.45);
                     setMobileInspectorOpen((v) => !v);
                   }}
                   className={cn(
@@ -1682,9 +1683,14 @@ export default function App() {
 
         <Dialog open={about} onOpenChange={setAbout}>
           <DialogContent className="about max-w-[460px]" aria-label="About BareBoard">
-            <DialogHeader>
-              <DialogDescription>About</DialogDescription>
-              <DialogTitle>BareBoard Studio</DialogTitle>
+            <DialogHeader className="flex-row items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/75">
+                <BrandMark size={28} />
+              </div>
+              <div>
+                <DialogDescription>About</DialogDescription>
+                <DialogTitle>BareBoard Studio</DialogTitle>
+              </div>
             </DialogHeader>
             <DialogBody className="about-body space-y-2.5">
               <p className="text-xs leading-relaxed text-muted-foreground">

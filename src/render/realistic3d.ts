@@ -67,10 +67,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
     (p0 === 'C' || (p0 === 'P' && p1 === 'C'))
     && ((part.expanse && part.expanse > 90) || part.type === 'through' || name.startsWith('CE') || (part.side === 'bottom' && longSide >= 180))
   ) {
-    // Standing Radial Electrolytic / Polymer Aluminum Can
+    // Standing Radial Electrolytic / Polymer Aluminum Can (1:1 real physical proportions)
     spec = {
       kind: 'electrolytic',
-      heightMil: Math.min(260, Math.max(115, longSide * 0.72)),
+      heightMil: Math.min(320, Math.max(135, longSide * 0.95)),
       bodyTop: '#e2e8f0',
       bodySide: '#1e293b',
       bodyStroke: '#64748b',
@@ -104,12 +104,12 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'R' || (p0 === 'P' && p1 === 'R')) {
-    // SMD Chip Resistor (coal-black resistive glaze + white ceramic substrate + bright silver end-caps)
+    // SMD Chip Resistor (coal-black resistive glaze + dark slate ceramic body + bright silver end-caps)
     spec = {
       kind: 'resistor',
       heightMil: Math.min(48, Math.max(18, shortSide * 0.48)),
       bodyTop: '#161b22',
-      bodySide: '#e2e8f0',
+      bodySide: '#3b424f',
       bodyStroke: '#475569',
       capColor: '#f1f5f9',
       accentColor: '#ffffff',
@@ -157,10 +157,13 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'Q' || (p0 === 'P' && p1 === 'Q') || p0 === 'T') {
-    // Standing TO-220 / TO-252 / SOT Power MOSFET
+    // Standing TO-220 / through-hole MOSFET vs flat SMD power FET / SOT
+    const isStandingTo220 = part.type === 'through' || (pinCount === 3 && longSide >= 160);
     spec = {
       kind: 'transistor',
-      heightMil: Math.min(240, Math.max(95, longSide * 0.78)),
+      heightMil: isStandingTo220
+        ? Math.min(420, Math.max(165, longSide * 1.45))
+        : Math.min(68, Math.max(24, shortSide * 0.52)),
       bodyTop: '#1e242d',
       bodySide: '#11161d',
       bodyStroke: '#64748b',
@@ -170,10 +173,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: true,
     };
   } else if (p0 === 'J' || name.startsWith('CN') || name.startsWith('CON') || name.startsWith('USB') || name.startsWith('HDMI')) {
-    // Standing Board-to-Board / Pin Header / FPC Connector
+    // Board-to-Board / Pin Header / FPC Connector
     spec = {
       kind: 'connector',
-      heightMil: Math.min(230, Math.max(105, shortSide * 0.85)),
+      heightMil: Math.min(340, Math.max(120, shortSide * 1.15)),
       bodyTop: '#334155',
       bodySide: '#475569',
       bodyStroke: '#cbd5e1',
@@ -242,6 +245,25 @@ function lerpPt(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
+/** Ensures quad vertices are ordered so 0->1 and 2->3 are the short terminal ends,
+ *  1->2 and 3->0 are the long sides, and edge 0->1 sits closest to `pin1` when provided. */
+function orientQuadToEnds(q: Point[], pin1?: Point): Point[] {
+  if (q.length < 4) return q;
+  const d01 = Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y);
+  const d12 = Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y);
+  let ordered = d01 > d12 ? [q[1], q[2], q[3], q[0]] : [q[0], q[1], q[2], q[3]];
+  if (pin1) {
+    const m01 = { x: (ordered[0].x + ordered[1].x) * 0.5, y: (ordered[0].y + ordered[1].y) * 0.5 };
+    const m23 = { x: (ordered[2].x + ordered[3].x) * 0.5, y: (ordered[2].y + ordered[3].y) * 0.5 };
+    const dist01 = Math.hypot(m01.x - pin1.x, m01.y - pin1.y);
+    const dist23 = Math.hypot(m23.x - pin1.x, m23.y - pin1.y);
+    if (dist23 < dist01) {
+      ordered = [ordered[2], ordered[3], ordered[0], ordered[1]];
+    }
+  }
+  return ordered;
+}
+
 function insetQuad(q: Point[], tLen: number, tWid: number): Point[] {
   const p0 = lerpPt(lerpPt(q[0], q[3], tLen), lerpPt(q[1], q[2], tLen), tWid);
   const p1 = lerpPt(lerpPt(q[0], q[3], tLen), lerpPt(q[1], q[2], tLen), 1 - tWid);
@@ -293,7 +315,7 @@ export function drawRealistic2DPart(
   ctx: CanvasRenderingContext2D,
   board: Board,
   part: Part,
-  quad: Point[],
+  rawQuad: Point[],
   cx: number,
   cy: number,
   spec: PackageSpec,
@@ -304,6 +326,7 @@ export function drawRealistic2DPart(
   dimmed: boolean,
   palette: Palette,
 ): void {
+  const quad = spec.hasEndCaps ? orientQuadToEnds(rawQuad) : rawQuad;
   const dx01 = quad[1].x - quad[0].x, dy01 = quad[1].y - quad[0].y;
   const dx12 = quad[2].x - quad[1].x, dy12 = quad[2].y - quad[1].y;
   const len01 = Math.hypot(dx01, dy01);
@@ -629,6 +652,9 @@ export interface ProjectedPoint {
   y: number;
   depth: number;
   persp: number;
+  vx: number;
+  vy: number;
+  vz: number;
 }
 
 export interface Projector3D {
@@ -641,9 +667,11 @@ export interface Projector3D {
   center: Point;
   topFacesCamera: boolean;
   zRelief: number;
+  camDist: number;
 }
 
-export const BOARD_HALF_THICKNESS_MIL = 36;
+/** Standard 1.6 mm (63 mil) FR-4 PCB thickness -> half-thickness = 31.5 mil. */
+export const BOARD_HALF_THICKNESS_MIL = 31.5;
 
 export function getSideZ(
   side: Side,
@@ -684,8 +712,9 @@ export function makeProjector3D(
   const cosP = Math.cos(pitchRad), sinP = Math.sin(pitchRad);
 
   const fov = Math.max(width, height) * 2.6;
-  // Boost vertical Z relief gently at full-board zoom so standing 3D components are clearly visible
-  const zRelief = Math.max(1.3, Math.min(2.35, 0.42 / Math.max(0.12, view.scale)));
+  const camDist = fov / 0.24;
+  // True 1:1 physical proportions across X, Y, and Z (no exaggerated board/part stretching)
+  const zRelief = 1;
 
   const project3D = (p: Point, z = 0): ProjectedPoint => {
     let dx = p.x - center.x;
@@ -710,6 +739,9 @@ export function makeProjector3D(
       y: height / 2 + yTilt * persp,
       depth: zDepth,
       persp,
+      vx: rx,
+      vy: yTilt,
+      vz: zDepth,
     };
   };
 
@@ -755,6 +787,7 @@ export function makeProjector3D(
     center,
     topFacesCamera,
     zRelief,
+    camDist,
   };
 }
 
@@ -857,88 +890,350 @@ function traceMultiContour3D(
   }
 }
 
-/** Helper to draw an extruded 3D prism between `z0` and `z1` with front-facing wall culling & true depth order. */
+function clampByte(v: number): number {
+  return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+}
+
+/** Scales a `#rrggbb` color by `factor` while returning non-hex strings unchanged. */
+function shadeHex(hex: string, factor: number): string {
+  if (!hex.startsWith('#') || hex.length !== 7) return hex;
+  const r = clampByte(parseInt(hex.slice(1, 3), 16) * factor);
+  const g = clampByte(parseInt(hex.slice(3, 5), 16) * factor);
+  const b = clampByte(parseInt(hex.slice(5, 7), 16) * factor);
+  return `rgb(${r},${g},${b})`;
+}
+
+/** Exact view-space face culling + upper-front-left key directional Lambertian shading. */
+function faceViewInfo(
+  pts: ProjectedPoint[],
+  interior: { vx: number; vy: number; vz: number },
+  camDist: number,
+  outwardTarget?: { vx: number; vy: number; vz: number },
+): { front: boolean; depth: number; lit: number } {
+  let cx = 0, cy = 0, cz = 0, depthSum = 0;
+  for (const p of pts) {
+    cx += p.vx; cy += p.vy; cz += p.vz; depthSum += p.depth;
+  }
+  const n = pts.length;
+  cx /= n; cy /= n; cz /= n;
+  const a = pts[0], b = pts[1], c = pts[2];
+  const e1x = b.vx - a.vx, e1y = b.vy - a.vy, e1z = b.vz - a.vz;
+  const e2x = c.vx - a.vx, e2y = c.vy - a.vy, e2z = c.vz - a.vz;
+  let nx = e1y * e2z - e1z * e2y;
+  let ny = e1z * e2x - e1x * e2z;
+  let nz = e1x * e2y - e1y * e2x;
+
+  const ref = outwardTarget ?? interior;
+  const refSign = outwardTarget ? -1 : 1;
+  if ((nx * (cx - ref.vx) + ny * (cy - ref.vy) + nz * (cz - ref.vz)) * refSign < 0) {
+    nx = -nx; ny = -ny; nz = -nz;
+  }
+  const nLen = Math.hypot(nx, ny, nz) || 1;
+  nx /= nLen; ny /= nLen; nz /= nLen;
+
+  const vx = -cx, vy = -cy, vz = -camDist - cz;
+  const vLen = Math.hypot(vx, vy, vz) || 1;
+  const facing = (nx * vx + ny * vy + nz * vz) / vLen;
+  const key = Math.max(0, nx * -0.38 + ny * -0.52 + nz * -0.77);
+  return {
+    front: facing > -0.015,
+    depth: depthSum / n,
+    lit: 0.78 + 0.30 * key,
+  };
+}
+
+/** Draws an extruded 3D prism between `z0` and `z1` using exact view-space front-face culling,
+ *  directional lighting, optional metallic end-cap walls, and optional internal seam suppression. */
 function drawExtrudedPrism3D(
   ctx: CanvasRenderingContext2D,
   poly: Point[],
   z0: number,
   z1: number,
-  P: (pt: Point, z: number) => ProjectedPoint,
+  proj: Projector3D,
   topFill: string,
   sideFill: string,
   strokeCol: string,
   alpha = 0.98,
   endCapFill?: string,
+  endCapShade?: string,
+  skipWalls?: Set<number>,
+  drawHiddenBack = false,
 ): { basePts: ProjectedPoint[]; roofPts: ProjectedPoint[] } {
+  const P = proj.project3D;
   const basePts = poly.map((pt) => P(pt, z0));
   const roofPts = poly.map((pt) => P(pt, z1));
 
-  const baseDepth = (basePts[0].depth + basePts[1].depth + basePts[2].depth + basePts[3].depth) * 0.25;
-  const roofDepth = (roofPts[0].depth + roofPts[1].depth + roofPts[2].depth + roofPts[3].depth) * 0.25;
-  const centerDepth = (baseDepth + roofDepth) * 0.5;
-  const roofIsFront = roofDepth <= baseDepth;
+  const interior = { vx: 0, vy: 0, vz: 0 };
+  for (let i = 0; i < basePts.length; i++) {
+    interior.vx += basePts[i].vx + roofPts[i].vx;
+    interior.vy += basePts[i].vy + roofPts[i].vy;
+    interior.vz += basePts[i].vz + roofPts[i].vz;
+  }
+  const div = Math.max(1, basePts.length * 2);
+  interior.vx /= div; interior.vy /= div; interior.vz /= div;
 
-  const drawFace = (pts: ProjectedPoint[], fill: string, stroke: string, lineWidth = 1.1) => {
-    ctx.beginPath();
-    pts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-    ctx.closePath();
-    ctx.save();
-    ctx.globalAlpha *= alpha;
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-  };
+  interface FaceDraw {
+    pts: ProjectedPoint[];
+    fill: string;
+    stroke: string;
+    lineWidth: number;
+    depth: number;
+  }
 
-  if (!roofIsFront) {
-    drawFace(roofPts, topFill, strokeCol);
+  const faces: FaceDraw[] = [];
+  const roofInfo = faceViewInfo(roofPts, interior, proj.camDist);
+  if (drawHiddenBack || roofInfo.front) {
+    faces.push({
+      pts: roofPts,
+      fill: shadeHex(topFill, roofInfo.lit),
+      stroke: strokeCol,
+      lineWidth: 0.95,
+      depth: roofInfo.depth,
+    });
+  }
+
+  const baseInfo = faceViewInfo(basePts, interior, proj.camDist);
+  if (drawHiddenBack || baseInfo.front) {
+    faces.push({
+      pts: basePts,
+      fill: shadeHex(sideFill, baseInfo.lit),
+      stroke: 'rgba(0, 0, 0, 0.35)',
+      lineWidth: 0.85,
+      depth: baseInfo.depth,
+    });
   }
 
   const extrudePx = Math.hypot(roofPts[0].x - basePts[0].x, roofPts[0].y - basePts[0].y);
-  if (extrudePx >= 0.6) {
-    const walls = [0, 1, 2, 3]
-      .map((k) => {
-        const next = (k + 1) % 4;
-        const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[next].depth + roofPts[k].depth) * 0.25;
-        return { k, next, wallDepth };
-      })
-      .filter((w) => w.wallDepth <= centerDepth + 0.05)
-      .sort((a, b) => b.wallDepth - a.wallDepth);
+  if (extrudePx >= 0.5) {
+    for (let k = 0; k < poly.length; k++) {
+      if (skipWalls?.has(k)) continue;
+      const next = (k + 1) % poly.length;
+      const quad = [basePts[k], basePts[next], roofPts[next], roofPts[k]];
+      const wInfo = faceViewInfo(quad, interior, proj.camDist);
+      if (!drawHiddenBack && !wInfo.front) continue;
+      const isEndWall = Boolean(endCapFill) && (k === 0 || k === 2);
+      const rawFill = isEndWall ? (k === 2 && endCapShade ? endCapShade : endCapFill!) : sideFill;
+      faces.push({
+        pts: quad,
+        fill: shadeHex(rawFill, wInfo.lit),
+        stroke: isEndWall ? 'rgba(100, 116, 139, 0.45)' : 'rgba(0, 0, 0, 0.28)',
+        lineWidth: 0.72,
+        depth: wInfo.depth,
+      });
+    }
+  }
 
-    for (const { k, next } of walls) {
+  faces.sort((a, b) => b.depth - a.depth);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  for (const f of faces) {
+    ctx.beginPath();
+    f.pts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+    ctx.closePath();
+    ctx.fillStyle = f.fill;
+    ctx.fill();
+    if (f.lineWidth > 0) {
+      ctx.strokeStyle = f.stroke;
+      ctx.lineWidth = f.lineWidth;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  return { basePts, roofPts };
+}
+
+/** Projects a true 3D circular cylinder between `zBot` and `zTop` as a seamless specular-shaded
+ *  silhouette contour (zero facet seams even under translucent X-ray rendering). */
+function drawCylinder3D(
+  ctx: CanvasRenderingContext2D,
+  centerWorld: Point,
+  radiusMil: number,
+  zBot: number,
+  zTop: number,
+  proj: Projector3D,
+  wallFill: string,
+  topFill: string,
+  strokeCol: string,
+  alpha = 0.96,
+  options?: {
+    stripeColor?: string;
+    stripeAngleRad?: number;
+    drawCrossVent?: boolean;
+    rimStroke?: string;
+  },
+): { botRing: ProjectedPoint[]; topRing: ProjectedPoint[] } {
+  const P = proj.project3D;
+  const N = 32;
+  const botRing: ProjectedPoint[] = [];
+  const topRing: ProjectedPoint[] = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const pt = { x: centerWorld.x + Math.cos(a) * radiusMil, y: centerWorld.y + Math.sin(a) * radiusMil };
+    botRing.push(P(pt, zBot));
+    topRing.push(P(pt, zTop));
+  }
+
+  const cBot = P(centerWorld, zBot);
+  const cTop = P(centerWorld, zTop);
+  const cMid = {
+    vx: (cBot.vx + cTop.vx) * 0.5,
+    vy: (cBot.vy + cTop.vy) * 0.5,
+    vz: (cBot.vz + cTop.vz) * 0.5,
+  };
+  const topIsFront = cTop.depth <= cBot.depth;
+
+  const drawCap = (ring: ProjectedPoint[], fill: string, stroke: string, isLid: boolean) => {
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.beginPath();
+    ring.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+    ctx.closePath();
+
+    // Subtle radial sheen across circular lid
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    const grad = ctx.createLinearGradient(minX, minY, maxX, maxY);
+    grad.addColorStop(0, shadeHex(fill, 1.08));
+    grad.addColorStop(0.55, fill);
+    grad.addColorStop(1, shadeHex(fill, 0.86));
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.0;
+    ctx.stroke();
+
+    if (isLid && options?.stripeColor) {
+      const a0 = (options.stripeAngleRad ?? 0) - 0.52;
+      const stripePts: ProjectedPoint[] = [];
+      for (let s = 0; s <= 6; s++) {
+        const ang = a0 + (s / 6) * 1.04;
+        stripePts.push(P({ x: centerWorld.x + Math.cos(ang) * radiusMil * 0.94, y: centerWorld.y + Math.sin(ang) * radiusMil * 0.94 }, zTop));
+      }
       ctx.beginPath();
-      ctx.moveTo(basePts[k].x, basePts[k].y);
-      ctx.lineTo(basePts[next].x, basePts[next].y);
-      ctx.lineTo(roofPts[next].x, roofPts[next].y);
-      ctx.lineTo(roofPts[k].x, roofPts[k].y);
+      stripePts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.closePath();
+      ctx.fillStyle = options.stripeColor;
+      ctx.fill();
+    }
+
+    if (isLid && options?.drawCrossVent) {
+      const pA = P({ x: centerWorld.x - radiusMil * 0.46, y: centerWorld.y - radiusMil * 0.46 }, zTop);
+      const pB = P({ x: centerWorld.x + radiusMil * 0.46, y: centerWorld.y + radiusMil * 0.46 }, zTop);
+      const pC = P({ x: centerWorld.x + radiusMil * 0.46, y: centerWorld.y - radiusMil * 0.46 }, zTop);
+      const pD = P({ x: centerWorld.x - radiusMil * 0.46, y: centerWorld.y + radiusMil * 0.46 }, zTop);
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y); ctx.lineTo(pB.x, pB.y);
+      ctx.moveTo(pC.x, pC.y); ctx.lineTo(pD.x, pD.y);
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.55)';
+      ctx.lineWidth = 1.0;
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  if (!topIsFront) drawCap(topRing, topFill, strokeCol, true);
+  else drawCap(botRing, wallFill, 'rgba(0, 0, 0, 0.35)', false);
+
+  const axisPx = Math.hypot(cTop.x - cBot.x, cTop.y - cBot.y);
+  if (axisPx >= 0.75) {
+    // Identify contiguous front-facing arc around the circular barrel
+    const segFront: boolean[] = new Array(N).fill(false);
+    for (let i = 0; i < N; i++) {
+      const next = (i + 1) % N;
+      const mx = (botRing[i].vx + botRing[next].vx + topRing[i].vx + topRing[next].vx) * 0.25;
+      const my = (botRing[i].vy + botRing[next].vy + topRing[i].vy + topRing[next].vy) * 0.25;
+      const mz = (botRing[i].vz + botRing[next].vz + topRing[i].vz + topRing[next].vz) * 0.25;
+      const rx = mx - cMid.vx, ry = my - cMid.vy, rz = mz - cMid.vz;
+      const vx = -mx, vy = -my, vz = -proj.camDist - mz;
+      segFront[i] = rx * vx + ry * vy + rz * vz > 0;
+    }
+
+    // Find start of contiguous front run
+    let start = -1;
+    let count = 0;
+    for (let i = 0; i < N; i++) {
+      if (segFront[i] && !segFront[(i + N - 1) % N]) {
+        start = i;
+        while (count < N && segFront[(start + count) % N]) count++;
+        break;
+      }
+    }
+
+    if (start >= 0 && count > 0) {
       ctx.save();
       ctx.globalAlpha *= alpha;
-      const isEndWall = Boolean(endCapFill) && (k === 0 || k === 2);
-      ctx.fillStyle = isEndWall ? endCapFill! : sideFill;
+
+      const endIdx = (start + count) % N;
+      const traceArcQuad = (arcStart: number, arcCount: number) => {
+        ctx.beginPath();
+        ctx.moveTo(botRing[arcStart].x, botRing[arcStart].y);
+        for (let s = 1; s <= arcCount; s++) {
+          const p = botRing[(arcStart + s) % N];
+          ctx.lineTo(p.x, p.y);
+        }
+        for (let s = arcCount; s >= 0; s--) {
+          const p = topRing[(arcStart + s) % N];
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+      };
+
+      traceArcQuad(start, count);
+      const pA = botRing[start], pB = botRing[endIdx];
+      const cylGrad = ctx.createLinearGradient(pA.x, pA.y, pB.x, pB.y);
+      cylGrad.addColorStop(0.0, shadeHex(wallFill, 0.78));
+      cylGrad.addColorStop(0.28, shadeHex(wallFill, 1.38));
+      cylGrad.addColorStop(0.62, shadeHex(wallFill, 0.96));
+      cylGrad.addColorStop(1.0, shadeHex(wallFill, 0.66));
+      ctx.fillStyle = cylGrad;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+
+      if (options?.stripeColor) {
+        const stripeCenter = options.stripeAngleRad ?? 0;
+        let sRunStart = -1;
+        let sRunLen = 0;
+        for (let s = 0; s < count; s++) {
+          const idx = (start + s) % N;
+          const angle = ((idx + 0.5) / N) * Math.PI * 2;
+          let diff = Math.abs(angle - stripeCenter);
+          if (diff > Math.PI) diff = Math.PI * 2 - diff;
+          if (diff < 0.48) {
+            if (sRunStart < 0) sRunStart = idx;
+            sRunLen++;
+          } else if (sRunStart >= 0) {
+            break;
+          }
+        }
+        if (sRunStart >= 0 && sRunLen > 0) {
+          traceArcQuad(sRunStart, sRunLen);
+          ctx.fillStyle = options.stripeColor;
+          ctx.fill();
+        }
+      }
+
+      traceArcQuad(start, count);
+      ctx.strokeStyle = strokeCol;
       ctx.lineWidth = 0.8;
       ctx.stroke();
       ctx.restore();
     }
   }
 
-  if (roofIsFront) {
-    drawFace(roofPts, topFill, strokeCol);
-  } else {
-    drawFace(basePts, sideFill, 'rgba(0, 0, 0, 0.35)', 0.9);
-  }
+  if (topIsFront) drawCap(topRing, topFill, options?.rimStroke || strokeCol, true);
+  else drawCap(botRing, wallFill, strokeCol, false);
 
-  return { basePts, roofPts };
+  return { botRing, topRing };
 }
 
-/** Draws a true 3D Standing TO-220 / Power MOSFET (`Q...`):
- *  - 3 vertical metallic legs rising straight up from the PCB pads
- *  - Upright molded black TO-220 package block standing above the legs
- *  - Upright brushed-silver metal heatsink tab rising above the black block with a circular mounting hole! */
+/** Draws a true volumetric 3D Standing TO-220 / Power MOSFET (`Q...`):
+ *  - Parallel vertical 3D stamped rectangular leadframes stepping down cleanly into solder fillets (never splayed!)
+ *  - Realistic 1:1 depth aluminum backing plate (`~42 mil`) + flush matte black epoxy front package (`~92 mil`)
+ *  - True 6-vertex beveled upper heatsink tab with open circular `evenodd` mounting hole & inner metallic bore wall
+ *  - Silkscreen label quad placed on the visible lower epoxy/heatsink body waist (never overlapping the mounting hole!) */
 function drawStandingMosfet3D(
   ctx: CanvasRenderingContext2D,
   board: Board,
@@ -947,76 +1242,439 @@ function drawStandingMosfet3D(
   zBase: number,
   zSign: number,
   totalH: number,
-  P: (pt: Point, z: number) => ProjectedPoint,
+  proj: Projector3D,
   selected: boolean,
   focused: boolean,
   palette: Palette,
-): ProjectedPoint[] {
-  const zLegTop = zBase + zSign * (totalH * 0.28);
-  const zBodyTop = zBase + zSign * (totalH * 0.74);
-  const zTabTop = zBase + zSign * totalH;
+): { roofPts: ProjectedPoint[]; labelQuad: ProjectedPoint[] } {
+  const P = proj.project3D;
+  const q = orientQuadToEnds(polyWorld);
 
-  // 1. Vertical silver metallic legs rising from each pin pad from zBase to zLegTop
-  ctx.save();
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 3.2;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
+  // Extract package frame vectors: uD across thickness (0->1), uW along pin row (0->3)
+  const rawWVec = { x: q[3].x - q[0].x, y: q[3].y - q[0].y };
+  const rawWLen = Math.hypot(rawWVec.x, rawWVec.y) || 1;
+  let uW = { x: rawWVec.x / rawWLen, y: rawWVec.y / rawWLen };
+  let uD = { x: -uW.y, y: uW.x };
+  const dHint = { x: q[1].x - q[0].x, y: q[1].y - q[0].y };
+  if (uD.x * dHint.x + uD.y * dHint.y < 0) {
+    uD = { x: -uD.x, y: -uD.y };
+  }
+  // Ensure consistent screen-facing orientation: epoxy plastic side on +uD (+Y bottom / +X right), metal tab on -uD
+  if (uD.y < -0.05 || (Math.abs(uD.y) <= 0.05 && uD.x < 0)) {
+    uD = { x: -uD.x, y: -uD.y };
+  }
+
+  let pinMinW = Infinity, pinMaxW = -Infinity;
+  let pinSumX = 0, pinSumY = 0, pCount = 0;
   for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
     const pin = board.pins[pIdx];
-    const p0 = P(pin, zBase);
-    const p1 = P(pin, zLegTop);
-    ctx.moveTo(p0.x, p0.y);
-    ctx.lineTo(p1.x, p1.y);
+    pinSumX += pin.x; pinSumY += pin.y; pCount++;
   }
-  ctx.stroke();
-  ctx.restore();
+  const pkgCenter = pCount > 0
+    ? { x: pinSumX / pCount, y: pinSumY / pCount }
+    : { x: (q[0].x + q[2].x) * 0.5, y: (q[0].y + q[2].y) * 0.5 };
+  for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
+    const pin = board.pins[pIdx];
+    const pw = (pin.x - pkgCenter.x) * uW.x + (pin.y - pkgCenter.y) * uW.y;
+    if (pw < pinMinW) pinMinW = pw;
+    if (pw > pinMaxW) pinMaxW = pw;
+  }
+  const pinSpan = Number.isFinite(pinMinW) ? Math.max(0, pinMaxW - pinMinW) : rawWLen;
 
-  // 2. Upright Silver Metal Heatsink Tab along the back edge (from zLegTop to zTabTop)
-  const tabPoly: Point[] = [
-    polyWorld[0],
-    polyWorld[1],
-    lerpPt(polyWorld[1], polyWorld[2], 0.22),
-    lerpPt(polyWorld[0], polyWorld[3], 0.22),
+  // Real JEDEC TO-220 proportions (~300 mil wide x ~135 mil deep x ~380 mil tall)
+  const pkgW = Math.max(rawWLen, pinSpan + 76, 210);
+  const pkgD = Math.min(165, Math.max(88, pkgW * 0.45));
+  const halfW = pkgW * 0.5;
+  const tabBackD = -pkgD * 0.56;
+  const splitD = -pkgD * 0.24; // ~32% thickness for aluminum plate (~43 mil)
+  const bodyFrontD = pkgD * 0.44; // ~68% thickness for molded black epoxy (~92 mil, centered cleanly over pin line d=0!)
+
+  const rectAtDepth = (d0: number, d1: number, hw = halfW): Point[] => [
+    { x: pkgCenter.x - uW.x * hw + uD.x * d0, y: pkgCenter.y - uW.y * hw + uD.y * d0 },
+    { x: pkgCenter.x - uW.x * hw + uD.x * d1, y: pkgCenter.y - uW.y * hw + uD.y * d1 },
+    { x: pkgCenter.x + uW.x * hw + uD.x * d1, y: pkgCenter.y + uW.y * hw + uD.y * d1 },
+    { x: pkgCenter.x + uW.x * hw + uD.x * d0, y: pkgCenter.y + uW.y * hw + uD.y * d0 },
   ];
 
-  // 3. Upright Black Molded TO-220 Body Block (from zLegTop to zBodyTop)
-  const bodyPoly = insetQuad(polyWorld, 0.05, 0.14);
+  const tabBase = rectAtDepth(tabBackD, splitD);
+  const bodyBase = rectAtDepth(splitD, bodyFrontD);
 
-  // Determine whether the metal heatsink tab is behind or in front of the black body relative to the camera
-  const tabMid = P(lerpPt(tabPoly[0], tabPoly[1], 0.5), (zBodyTop + zTabTop) * 0.5);
-  const bodyMid = P(lerpPt(bodyPoly[0], bodyPoly[2], 0.5), (zLegTop + zBodyTop) * 0.5);
-  const strokeCol = selected ? palette.selectionRing : focused ? palette.active : '#64748b';
+  const realH = Math.min(430, Math.max(totalH, pkgW * 1.28));
+  const leadH = Math.min(62, Math.max(30, realH * 0.16));
+  const zBodyBot = zBase + zSign * leadH;
+  const zShoulderBot = zBase + zSign * (leadH * 0.46);
+  const zBodyTop = zBase + zSign * (realH * 0.62);
+  const zTabTop = zBase + zSign * realH;
 
-  const renderHeatsinkTab = () => {
-    drawExtrudedPrism3D(ctx, tabPoly, zLegTop, zTabTop, P, '#f1f5f9', '#cbd5e1', '#94a3b8', 0.96);
-    // Circular mounting hole in the upper metal heatsink tab
-    const holeCenterWorld = lerpPt(lerpPt(tabPoly[0], tabPoly[1], 0.5), lerpPt(tabPoly[3], tabPoly[2], 0.5), 0.5);
-    const holePt = P(holeCenterWorld, zBase + zSign * (totalH * 0.87));
-    const tabEdgeA = P(tabPoly[0], zTabTop);
-    const tabEdgeB = P(tabPoly[1], zTabTop);
-    const tabScreenW = Math.hypot(tabEdgeB.x - tabEdgeA.x, tabEdgeB.y - tabEdgeA.y);
-    const holeR = Math.min(7, Math.max(2.2, tabScreenW * 0.16));
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(holePt.x, holePt.y, holeR, 0, Math.PI * 2);
-    ctx.fillStyle = '#0f172a';
-    ctx.fill();
-    ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.restore();
+  // Same-Z front/back depth comparison at epoxy mid-height so metal plate & plastic never swap order
+  const zBodyMid = (zBodyBot + zBodyTop) * 0.5;
+  const tabMidPos = {
+    x: pkgCenter.x + uD.x * ((tabBackD + splitD) * 0.5),
+    y: pkgCenter.y + uD.y * ((tabBackD + splitD) * 0.5),
+  };
+  const bodyMidPos = {
+    x: pkgCenter.x + uD.x * ((splitD + bodyFrontD) * 0.5),
+    y: pkgCenter.y + uD.y * ((splitD + bodyFrontD) * 0.5),
+  };
+  const tabBehindBody = P(tabMidPos, zBodyMid).depth >= P(bodyMidPos, zBodyMid).depth;
+  const topViewFromBodySide = P(pkgCenter, zTabTop).depth <= P(pkgCenter, zBase).depth;
+  const strokeCol = selected ? palette.selectionRing : focused ? palette.active : '#475569';
+
+  const drawVertical3DLeads = () => {
+    const pinsList: { pin: Pin; depth: number }[] = [];
+    for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
+      const pin = board.pins[pIdx];
+      pinsList.push({ pin, depth: P(pin, zShoulderBot).depth });
+    }
+    pinsList.sort((a, b) => b.depth - a.depth);
+
+    const makePinBox = (cx: Point, hwPin: number, hdPin: number): Point[] => [
+      { x: cx.x - uW.x * hwPin - uD.x * hdPin, y: cx.y - uW.y * hwPin - uD.y * hdPin },
+      { x: cx.x - uW.x * hwPin + uD.x * hdPin, y: cx.y - uW.y * hwPin + uD.y * hdPin },
+      { x: cx.x + uW.x * hwPin + uD.x * hdPin, y: cx.y + uW.y * hwPin + uD.y * hdPin },
+      { x: cx.x + uW.x * hwPin - uD.x * hdPin, y: cx.y + uW.y * hwPin - uD.y * hdPin },
+    ];
+
+    for (const { pin } of pinsList) {
+      // Keep W coordinate 100% locked onto the pin so leads drop straight parallel into each pad!
+      const pw = (pin.x - pkgCenter.x) * uW.x + (pin.y - pkgCenter.y) * uW.y;
+      const bodyAnchorLine = { x: pkgCenter.x + uW.x * pw, y: pkgCenter.y + uW.y * pw };
+      const upperPoly = makePinBox(bodyAnchorLine, Math.min(13, Math.max(8, pin.radius * 0.68)), 7);
+      const lowerPoly = makePinBox(pin, Math.min(7.5, Math.max(4.5, pin.radius * 0.38)), 5.5);
+
+      drawExtrudedPrism3D(ctx, upperPoly, zShoulderBot, zBodyBot + zSign * 2, proj, '#cbd5e1', '#94a3b8', '#64748b', 0.98);
+      drawExtrudedPrism3D(ctx, lowerPoly, zBase, zShoulderBot + zSign * 1, proj, '#f1f5f9', '#cbd5e1', '#64748b', 0.99);
+    }
   };
 
-  if (tabMid.depth >= bodyMid.depth) {
-    renderHeatsinkTab();
-    const { roofPts } = drawExtrudedPrism3D(ctx, bodyPoly, zLegTop, zBodyTop, P, '#222832', '#12161d', strokeCol, 0.94);
-    return roofPts;
+  // True 6-vertex beveled hexagonal aluminum upper heatsink tab with open circular pierced mounting hole
+  const renderUpperTabWithHole = () => {
+    const chamfer = pkgW * 0.14;
+    const hexHeight = Math.abs(zTabTop - zBodyTop);
+    const chamferZ = zSign * Math.min(hexHeight * 0.42, chamfer * 1.15);
+    const hexCoords: { w: number; z: number }[] = [
+      { w: -halfW, z: zBodyTop },
+      { w: -halfW, z: zTabTop - chamferZ },
+      { w: -halfW + chamfer, z: zTabTop },
+      { w: halfW - chamfer, z: zTabTop },
+      { w: halfW, z: zTabTop - chamferZ },
+      { w: halfW, z: zBodyTop },
+    ];
+
+    const backPts = hexCoords.map((c) => P({ x: pkgCenter.x + uW.x * c.w + uD.x * tabBackD, y: pkgCenter.y + uW.y * c.w + uD.y * tabBackD }, c.z));
+    const frontPts = hexCoords.map((c) => P({ x: pkgCenter.x + uW.x * c.w + uD.x * splitD, y: pkgCenter.y + uW.y * c.w + uD.y * splitD }, c.z));
+
+    const tabCenterZ = (zBodyTop + zTabTop) * 0.5;
+    const interiorMid = P(tabMidPos, tabCenterZ);
+
+    const holeZ = zBodyTop + (zTabTop - zBodyTop) * 0.50;
+    const rHole = Math.min(pkgW * 0.145, hexHeight * 0.31);
+    const holeN = 16;
+    const backHole: ProjectedPoint[] = [];
+    const frontHole: ProjectedPoint[] = [];
+    for (let s = 0; s < holeN; s++) {
+      const a = (s / holeN) * Math.PI * 2;
+      const hwOff = Math.cos(a) * rHole;
+      const hz = holeZ + Math.sin(a) * rHole;
+      backHole.push(P({ x: pkgCenter.x + uW.x * hwOff + uD.x * tabBackD, y: pkgCenter.y + uW.y * hwOff + uD.y * tabBackD }, hz));
+      frontHole.push(P({ x: pkgCenter.x + uW.x * hwOff + uD.x * splitD, y: pkgCenter.y + uW.y * hwOff + uD.y * splitD }, hz));
+    }
+    const holeAxisMid = P(tabMidPos, holeZ);
+
+    const backFaceInfo = faceViewInfo(backPts, interiorMid, proj.camDist);
+    const frontFaceInfo = faceViewInfo(frontPts, interiorMid, proj.camDist);
+    const frontIsNear = frontFaceInfo.depth <= backFaceInfo.depth;
+    const farPts = frontIsNear ? backPts : frontPts;
+    const farInfo = frontIsNear ? backFaceInfo : frontFaceInfo;
+    const nearPts = frontIsNear ? frontPts : backPts;
+    const nearInfo = frontIsNear ? frontFaceInfo : backFaceInfo;
+
+    const drawPiercedPlateFace = (outerRing: ProjectedPoint[], holeRing: ProjectedPoint[], lit: number, stroke: string) => {
+      ctx.save();
+      ctx.beginPath();
+      outerRing.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      holeRing.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.fillStyle = shadeHex('#e2e8f0', lit);
+      ctx.fill('evenodd');
+
+      ctx.beginPath();
+      outerRing.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 0.95;
+      ctx.stroke();
+
+      ctx.beginPath();
+      holeRing.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.72)';
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    // 1. Far pierced cap face (allows seeing PCB behind through open circular hole!)
+    drawPiercedPlateFace(farPts, frontIsNear ? backHole : frontHole, farInfo.lit * 0.92, '#64748b');
+
+    // 2. Visible outer chamfered perimeter edges (edges 0..4, skipping bottom seam 5->0 touching tabLower)
+    const perimWalls: { pts: ProjectedPoint[]; fill: string; depth: number }[] = [];
+    for (let k = 0; k < 5; k++) {
+      const next = (k + 1) % 6;
+      const quad = [backPts[k], backPts[next], frontPts[next], frontPts[k]];
+      const wInfo = faceViewInfo(quad, interiorMid, proj.camDist);
+      if (!wInfo.front) continue;
+      perimWalls.push({ pts: quad, fill: shadeHex('#cbd5e1', wInfo.lit), depth: wInfo.depth });
+    }
+    perimWalls.sort((a, b) => b.depth - a.depth);
+    for (const pw of perimWalls) {
+      ctx.beginPath();
+      pw.pts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.fillStyle = pw.fill;
+      ctx.fill();
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+
+    // 3. Machined cylindrical metal bore inside the pierced mounting hole
+    const boreQuads: { pts: ProjectedPoint[]; fill: string; depth: number }[] = [];
+    for (let s = 0; s < holeN; s++) {
+      const next = (s + 1) % holeN;
+      const quad = [backHole[s], backHole[next], frontHole[next], frontHole[s]];
+      const bInfo = faceViewInfo(quad, holeAxisMid, proj.camDist, holeAxisMid);
+      if (!bInfo.front) continue;
+      boreQuads.push({ pts: quad, fill: shadeHex('#94a3b8', bInfo.lit), depth: bInfo.depth });
+    }
+    boreQuads.sort((a, b) => b.depth - a.depth);
+    for (const bq of boreQuads) {
+      ctx.beginPath();
+      bq.pts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.fillStyle = bq.fill;
+      ctx.fill();
+    }
+
+    // 4. Near pierced aluminum plate face
+    drawPiercedPlateFace(nearPts, frontIsNear ? frontHole : backHole, nearInfo.lit, selected ? palette.selectionRing : focused ? palette.active : '#64748b');
+  };
+
+  let bodyRes!: { basePts: ProjectedPoint[]; roofPts: ProjectedPoint[] };
+  let tabLowerRes!: { basePts: ProjectedPoint[]; roofPts: ProjectedPoint[] };
+
+  if (topViewFromBodySide) {
+    drawVertical3DLeads();
+    if (tabBehindBody) {
+      tabLowerRes = drawExtrudedPrism3D(ctx, tabBase, zBodyBot, zBodyTop, proj, '#e2e8f0', '#cbd5e1', '#64748b', 0.98);
+      bodyRes = drawExtrudedPrism3D(ctx, bodyBase, zBodyBot, zBodyTop, proj, '#262d38', '#151a22', strokeCol, 0.99);
+    } else {
+      bodyRes = drawExtrudedPrism3D(ctx, bodyBase, zBodyBot, zBodyTop, proj, '#262d38', '#151a22', strokeCol, 0.99);
+      tabLowerRes = drawExtrudedPrism3D(ctx, tabBase, zBodyBot, zBodyTop, proj, '#e2e8f0', '#cbd5e1', '#64748b', 0.98);
+    }
+    renderUpperTabWithHole();
   } else {
-    const { roofPts } = drawExtrudedPrism3D(ctx, bodyPoly, zLegTop, zBodyTop, P, '#222832', '#12161d', strokeCol, 0.94);
-    renderHeatsinkTab();
-    return roofPts;
+    renderUpperTabWithHole();
+    if (tabBehindBody) {
+      tabLowerRes = drawExtrudedPrism3D(ctx, tabBase, zBodyBot, zBodyTop, proj, '#e2e8f0', '#cbd5e1', '#64748b', 0.98);
+      bodyRes = drawExtrudedPrism3D(ctx, bodyBase, zBodyBot, zBodyTop, proj, '#262d38', '#151a22', strokeCol, 0.99);
+    } else {
+      bodyRes = drawExtrudedPrism3D(ctx, bodyBase, zBodyBot, zBodyTop, proj, '#262d38', '#151a22', strokeCol, 0.99);
+      tabLowerRes = drawExtrudedPrism3D(ctx, tabBase, zBodyBot, zBodyTop, proj, '#e2e8f0', '#cbd5e1', '#64748b', 0.98);
+    }
+    drawVertical3DLeads();
   }
+
+  // Place designator label on lower epoxy front wall (or lower metal plate when viewed from behind) — never over the hole!
+  const pitchAbs = Math.abs(Math.acos(Math.max(-1, Math.min(1, proj.cosP))) * 180 / Math.PI);
+  const labelQuad = pitchAbs < 24
+    ? bodyRes.roofPts
+    : tabBehindBody
+      ? [bodyRes.basePts[1], bodyRes.basePts[2], bodyRes.roofPts[2], bodyRes.roofPts[1]]
+      : [tabLowerRes.basePts[0], tabLowerRes.basePts[3], tabLowerRes.roofPts[3], tabLowerRes.roofPts[0]];
+
+  return { roofPts: bodyRes.roofPts, labelQuad };
+}
+
+/** Draws a true hollow 3D Shrouded Box Header / Connector (`J...`):
+ *  - Exact longitudinal pin spacing along connector slot centerline (never shrunk toward center)
+ *  - View-space outward-normal wall culling for outer shroud walls, recessed cavity pocket, and U-bezel keyway */
+function drawConnector3D(
+  ctx: CanvasRenderingContext2D,
+  board: Board,
+  part: Part,
+  polyWorld: Point[],
+  zBase: number,
+  zSign: number,
+  heightMil: number,
+  proj: Projector3D,
+  selected: boolean,
+  focused: boolean,
+  xrayAlpha: number,
+  palette: Palette,
+): ProjectedPoint[] {
+  const P = proj.project3D;
+  const outer = orientQuadToEnds(polyWorld);
+  const cavity = insetQuad(outer, 0.08, 0.24);
+  const zRoof = zBase + zSign * heightMil;
+  const zFloor = zBase + zSign * (heightMil * 0.34);
+  const zPinTip = zRoof - zSign * Math.min(8, heightMil * 0.04);
+
+  const oBase = outer.map((pt) => P(pt, zBase));
+  const oRoof = outer.map((pt) => P(pt, zRoof));
+  const cFloor = cavity.map((pt) => P(pt, zFloor));
+  const cRoof = cavity.map((pt) => P(pt, zRoof));
+
+  const interior = { vx: 0, vy: 0, vz: 0 };
+  for (let i = 0; i < 4; i++) {
+    interior.vx += oBase[i].vx + oRoof[i].vx;
+    interior.vy += oBase[i].vy + oRoof[i].vy;
+    interior.vz += oBase[i].vz + oRoof[i].vz;
+  }
+  interior.vx /= 8; interior.vy /= 8; interior.vz /= 8;
+
+  const roofInfo = faceViewInfo(oRoof, interior, proj.camDist);
+  const baseInfo = faceViewInfo(oBase, interior, proj.camDist);
+
+  const outerWalls = [0, 1, 2, 3].map((k) => {
+    const next = (k + 1) % 4;
+    const quad = [oBase[k], oBase[next], oRoof[next], oRoof[k]];
+    const wInfo = faceViewInfo(quad, interior, proj.camDist);
+    return { k, next, quad, ...wInfo };
+  });
+  const backOuter = outerWalls.filter((w) => !w.front).sort((a, b) => b.depth - a.depth);
+  const frontOuter = outerWalls.filter((w) => w.front).sort((a, b) => b.depth - a.depth);
+
+  const fillWallPts = (pts: ProjectedPoint[], fill: string, stroke = 'rgba(0,0,0,0.35)') => {
+    ctx.beginPath();
+    pts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  };
+
+  ctx.save();
+  ctx.globalAlpha *= xrayAlpha;
+
+  if (!roofInfo.front && baseInfo.front) {
+    fillWallPts(oRoof, '#1e293b');
+  }
+  for (const w of backOuter) {
+    fillWallPts(w.quad, shadeHex(w.k === 0 || w.k === 2 ? '#2c3543' : '#364152', w.lit));
+  }
+
+  // Dark recessed cavity floor & visible inner cavity walls (front side looking into center)
+  ctx.beginPath();
+  cFloor.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+  ctx.closePath();
+  ctx.fillStyle = '#090d12';
+  ctx.fill();
+
+  const cavInterior = { vx: 0, vy: 0, vz: 0 };
+  for (let i = 0; i < 4; i++) {
+    cavInterior.vx += cFloor[i].vx + cRoof[i].vx;
+    cavInterior.vy += cFloor[i].vy + cRoof[i].vy;
+    cavInterior.vz += cFloor[i].vz + cRoof[i].vz;
+  }
+  cavInterior.vx /= 8; cavInterior.vy /= 8; cavInterior.vz /= 8;
+
+  const innerWalls = [0, 1, 2, 3].map((k) => {
+    const next = (k + 1) % 4;
+    const quad = [cFloor[k], cFloor[next], cRoof[next], cRoof[k]];
+    const wInfo = faceViewInfo(quad, cavInterior, proj.camDist, cavInterior);
+    return { quad, ...wInfo };
+  }).filter((w) => w.front).sort((a, b) => b.depth - a.depth);
+  for (const iw of innerWalls) {
+    fillWallPts(iw.quad, shadeHex('#141a22', iw.lit), 'rgba(0,0,0,0.45)');
+  }
+
+  // 3D Gold-plated header pins preserving exact longitudinal pin pitch along cavity centerline
+  const pinCount = Math.max(0, part.pinEnd - part.pinStart);
+  if (pinCount > 0 && pinCount <= 60) {
+    const cavMidA = lerpPt(cavity[0], cavity[1], 0.5);
+    const cavMidB = lerpPt(cavity[3], cavity[2], 0.5);
+    const cavCenter = lerpPt(cavMidA, cavMidB, 0.5);
+    const ldx = cavMidB.x - cavMidA.x, ldy = cavMidB.y - cavMidA.y;
+    const lLen = Math.hypot(ldx, ldy) || 1;
+    const uL = { x: ldx / lLen, y: ldy / lLen };
+    const uS = { x: -uL.y, y: uL.x };
+    const halfCavL = Math.max(8, lLen * 0.5 - 10);
+
+    const pinObjs: { pBot: ProjectedPoint; pTop: ProjectedPoint; d: number }[] = [];
+    for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
+      const pin = board.pins[pIdx];
+      const rx = pin.x - cavCenter.x, ry = pin.y - cavCenter.y;
+      const alongL = Math.max(-halfCavL, Math.min(halfCavL, rx * uL.x + ry * uL.y));
+      const acrossS = (rx * uS.x + ry * uS.y) * 0.65;
+      const insidePin = {
+        x: cavCenter.x + uL.x * alongL + uS.x * acrossS,
+        y: cavCenter.y + uL.y * alongL + uS.y * acrossS,
+      };
+      const pBot = P(insidePin, zFloor);
+      const pTop = P(insidePin, zPinTip);
+      pinObjs.push({ pBot, pTop, d: (pBot.depth + pTop.depth) * 0.5 });
+    }
+    pinObjs.sort((a, b) => b.d - a.d);
+    const cavW = Math.hypot(cRoof[1].x - cRoof[0].x, cRoof[1].y - cRoof[0].y);
+    const pinW = Math.min(3.8, Math.max(1.6, cavW * 0.14));
+    ctx.lineCap = 'butt';
+    for (const { pBot, pTop } of pinObjs) {
+      ctx.strokeStyle = '#a16207';
+      ctx.lineWidth = pinW + 0.6;
+      ctx.beginPath();
+      ctx.moveTo(pBot.x, pBot.y);
+      ctx.lineTo(pTop.x, pTop.y);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = Math.max(1.0, pinW * 0.58);
+      ctx.beginPath();
+      ctx.moveTo(pBot.x, pBot.y);
+      ctx.lineTo(pTop.x, pTop.y);
+      ctx.stroke();
+    }
+  }
+
+  // Front exterior housing walls (naturally occlude the internal pins!)
+  for (const w of frontOuter) {
+    fillWallPts(w.quad, shadeHex(w.k === 0 || w.k === 2 ? '#374151' : '#475569', w.lit));
+  }
+
+  // Hollow top U-shaped plastic shroud rim + polarization keyway notch
+  const strokeCol = selected ? palette.selectionRing : focused ? palette.active : '#94a3b8';
+  if (roofInfo.front) {
+    ctx.beginPath();
+    oRoof.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+    ctx.closePath();
+    ctx.moveTo(cRoof[0].x, cRoof[0].y);
+    ctx.lineTo(cRoof[3].x, cRoof[3].y);
+    ctx.lineTo(cRoof[2].x, cRoof[2].y);
+    ctx.lineTo(cRoof[1].x, cRoof[1].y);
+    ctx.closePath();
+    ctx.fillStyle = shadeHex('#2d3748', roofInfo.lit);
+    ctx.fill('evenodd');
+    ctx.strokeStyle = strokeCol;
+    ctx.lineWidth = selected ? 2.2 : 1.05;
+    ctx.stroke();
+
+    const notchA = P(lerpPt(lerpPt(outer[0], outer[3], 0.36), lerpPt(outer[1], outer[2], 0.08), 0.5), zRoof);
+    const notchB = P(lerpPt(lerpPt(outer[0], outer[3], 0.64), lerpPt(outer[1], outer[2], 0.08), 0.5), zRoof);
+    ctx.strokeStyle = '#090d12';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(notchA.x, notchA.y);
+    ctx.lineTo(notchB.x, notchB.y);
+    ctx.stroke();
+  } else {
+    fillWallPts(oBase, shadeHex('#334155', baseInfo.lit), strokeCol);
+  }
+
+  ctx.restore();
+  return oRoof;
 }
 
 /** Draws a 3D Orientation Compass Gizmo in the top-right corner of the 3D viewport. */
@@ -1030,9 +1688,11 @@ function draw3DGizmo(
   flipZ: boolean,
   palette: Palette,
 ): void {
-  const gx = w - 48;
-  const gy = 54;
-  const len = 22;
+  const compact = w < 780;
+  const gx = compact ? w - 34 : w - 48;
+  const gy = compact ? 76 : 54;
+  const radius = compact ? 22 : 30;
+  const len = compact ? 16 : 22;
 
   const rotRad = ((rotation + cam.yawDeg) * Math.PI) / 180;
   const cosR = Math.cos(rotRad), sinR = Math.sin(rotRad);
@@ -1053,7 +1713,7 @@ function draw3DGizmo(
 
   ctx.save();
   ctx.beginPath();
-  ctx.arc(gx, gy, 30, 0, Math.PI * 2);
+  ctx.arc(gx, gy, radius, 0, Math.PI * 2);
   ctx.fillStyle = palette.isLightCanvas ? 'rgba(240, 244, 248, 0.9)' : 'rgba(10, 16, 24, 0.86)';
   ctx.fill();
   ctx.strokeStyle = palette.outlineStroke;
@@ -1248,12 +1908,14 @@ export function renderBoard3D(
         };
 
         if (!showGizmo || isFarSideUnderBoard) {
-          drawXrayRing(buckets.nc, palette.pinNc, 0.45);
-          drawXrayRing(buckets.gnd, '#94a3b8', 0.62);
-          drawXrayRing(buckets.normal, side === 'top' ? '#fde047' : '#7dd3fc', 0.72);
-          drawXrayRing(buckets.pin1, palette.pinA1, 0.92);
+          drawXrayRing(buckets.nc, palette.pinNc, 0.4);
+          drawXrayRing(buckets.gnd, '#94a3b8', 0.55);
+          drawXrayRing(buckets.normal, side === 'top' ? '#fde047' : '#7dd3fc', 0.65);
+          drawXrayRing(buckets.pin1, palette.pinA1, 0.85);
         } else {
-          drawXrayRing(buckets.pin1, palette.pinA1, 0.78);
+          // Only draw X-ray pin-1 rings on exposed orphan/test pads so solid 3D bodies stay unblemished
+          const exposedPin1 = buckets.pin1.filter((p) => p.pin.part <= 0 || board.parts[p.pin.part - 1]?.isDummy);
+          drawXrayRing(exposedPin1, palette.pinA1, 0.78);
         }
 
         if (highlighted.length) {
@@ -1271,11 +1933,14 @@ export function renderBoard3D(
           ctx.restore();
         }
 
-        if (labeled.length && labeled.length <= 500) {
+        const visibleLabels = showGizmo && !isFarSideUnderBoard
+          ? labeled.filter((sp) => sp.isSelected || sp.isPartSelected || sp.isSameNet || sp.pin.part <= 0 || board.parts[sp.pin.part - 1]?.isDummy)
+          : labeled;
+        if (visibleLabels.length && visibleLabels.length <= 500) {
           ctx.save();
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          for (const sp of labeled) {
+          for (const sp of visibleLabels) {
             const pinLabel = sp.pin.name || sp.pin.number || '';
             if (!pinLabel) continue;
             const fontPx = Math.min(10.5, Math.max(6.5, (sp.r * 1.4) / Math.max(1.8, pinLabel.length * 0.58)));
@@ -1330,14 +1995,19 @@ export function renderBoard3D(
           ];
 
       const spec = classifyPartPackage(part);
+      const pin1 = part.pinStart < board.pins.length ? board.pins[part.pinStart] : undefined;
+      const orientedRaw = (spec.hasEndCaps || spec.kind === 'transistor' || spec.kind === 'connector')
+        ? orientQuadToEnds(rawPoly, pin1)
+        : rawPoly;
       const polyWorld = spec.hasEndCaps
-        ? insetQuad(rawPoly, 0.02, 0.08)
+        ? insetQuad(orientedRaw, 0.02, 0.08)
         : spec.kind === 'ic'
-          ? insetQuad(rawPoly, 0.1, 0.12)
-          : rawPoly;
+          ? insetQuad(orientedRaw, 0.14, 0.14)
+          : orientedRaw;
 
+      const zBodyBot = spec.kind === 'ic' ? zBase + zSign * Math.max(4, spec.heightMil * 0.14) : zBase;
       const zRoof = zBase + zSign * spec.heightMil;
-      const basePts = polyWorld.map((pt) => P(pt, zBase));
+      const basePts = polyWorld.map((pt) => P(pt, zBodyBot));
       const roofPts = polyWorld.map((pt) => P(pt, zRoof));
 
       let minSX = Infinity, maxSX = -Infinity, minSY = Infinity, maxSY = -Infinity;
@@ -1380,18 +2050,19 @@ export function renderBoard3D(
       if (hasFilter && !highlighted) ctx.globalAlpha = 0.38;
 
       const xrayAlpha = isFarSideUnderBoard
-        ? 0.54
+        ? 0.36
         : selected || focused
           ? 0.98
           : spec.kind === 'bga'
-            ? 0.78
+            ? 0.8
             : showGizmo
               ? 0.97
-              : 0.9;
+              : 0.92;
       const zRoof = zBase + zSign * spec.heightMil;
+      const zBodyBot = spec.kind === 'ic' ? zBase + zSign * Math.max(4, spec.heightMil * 0.14) : zBase;
 
       // Helper to render the 3D Silkscreen Label on `labelQuad`
-      const renderRoofLabel = (labelQuad: ProjectedPoint[]) => {
+      const renderRoofLabel = (labelQuad: ProjectedPoint[], floatAbove = false) => {
         if (!layers.labels) return;
         const minScreenForPassive = isFarSideUnderBoard ? 18 : 32;
         if (isDenseBoard && !spec.showLabelAtAllZooms && screenSize < minScreenForPassive && !selected && !focused) {
@@ -1399,6 +2070,20 @@ export function renderBoard3D(
         }
         const rcx = (labelQuad[0].x + labelQuad[1].x + labelQuad[2].x + labelQuad[3].x) * 0.25;
         const rcy = (labelQuad[0].y + labelQuad[1].y + labelQuad[2].y + labelQuad[3].y) * 0.25;
+        if (floatAbove) {
+          ctx.save();
+          ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const topY = Math.min(labelQuad[0].y, labelQuad[1].y, labelQuad[2].y, labelQuad[3].y) - 10;
+          ctx.strokeStyle = isFarSideUnderBoard ? 'rgba(0, 0, 0, 0.55)' : 'rgba(0, 0, 0, 0.88)';
+          ctx.lineWidth = 2.6;
+          ctx.strokeText(part.name, rcx, topY);
+          ctx.fillStyle = selected || focused ? '#fde047' : (isFarSideUnderBoard ? '#94a3b8' : '#ffffff');
+          ctx.fillText(part.name, rcx, topY);
+          ctx.restore();
+          return;
+        }
         const dx01 = labelQuad[1].x - labelQuad[0].x, dy01 = labelQuad[1].y - labelQuad[0].y;
         const dx12 = labelQuad[2].x - labelQuad[1].x, dy12 = labelQuad[2].y - labelQuad[1].y;
         const len01 = Math.hypot(dx01, dy01), len12 = Math.hypot(dx12, dy12);
@@ -1449,127 +2134,163 @@ export function renderBoard3D(
       };
 
       // --- 1. STANDING 3D TO-220 / POWER MOSFET (`transistor`) ---
-      if (spec.kind === 'transistor' && screenSize >= 6) {
-        roofPts = drawStandingMosfet3D(
+      const pinCount = Math.max(0, part.pinEnd - part.pinStart);
+      if (spec.kind === 'transistor' && pinCount <= 3 && spec.heightMil >= 120 && screenSize >= 6) {
+        const res = drawStandingMosfet3D(
           ctx, board, part, polyWorld, zBase, zSign, spec.heightMil,
-          P, selected, focused, palette,
+          proj, selected, focused, palette,
         );
-        renderRoofLabel(roofPts);
+        renderRoofLabel(res.labelQuad);
         ctx.restore();
         continue;
       }
 
-      // --- 2. STANDING 3D RADIAL ELECTROLYTIC CAPACITOR CAN (`electrolytic`) ---
+      // --- 2. HOLLOW 3D SHROUDED HEADER / CONNECTOR (`connector`) ---
+      if (spec.kind === 'connector' && screenSize >= 8) {
+        roofPts = drawConnector3D(
+          ctx, board, part, polyWorld, zBase, zSign, spec.heightMil,
+          proj, selected, focused, xrayAlpha, palette,
+        );
+        renderRoofLabel(roofPts, true);
+        ctx.restore();
+        continue;
+      }
+
+      // --- 3. TRUE PROJECTED 3D RADIAL ELECTROLYTIC CAPACITOR CAN (`electrolytic`) ---
       if (spec.kind === 'electrolytic') {
-        ctx.beginPath();
-        basePts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(20, 26, 34, 0.92)';
-        ctx.fill();
-        ctx.strokeStyle = '#64748b';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        // Chamfered phenolic mounting base wafer on the PCB
+        const zWaferTop = zBase + zSign * Math.min(16, spec.heightMil * 0.11);
+        drawExtrudedPrism3D(ctx, polyWorld, zBase, zWaferTop, proj, '#1a2029', '#11161d', '#475569', xrayAlpha);
 
         const centerWorld = part.center || {
           x: (polyWorld[0].x + polyWorld[2].x) * 0.5,
           y: (polyWorld[0].y + polyWorld[2].y) * 0.5,
         };
+        const edgeA = Math.hypot(polyWorld[1].x - polyWorld[0].x, polyWorld[1].y - polyWorld[0].y);
+        const edgeB = Math.hypot(polyWorld[2].x - polyWorld[1].x, polyWorld[2].y - polyWorld[1].y);
         const worldR = part.expanse
           ? part.expanse * 0.36
-          : Math.min(
-              Math.hypot(polyWorld[1].x - polyWorld[0].x, polyWorld[1].y - polyWorld[0].y),
-              Math.hypot(polyWorld[2].x - polyWorld[1].x, polyWorld[2].y - polyWorld[1].y),
-            ) * 0.45;
-        const cBase = P(centerWorld, zBase);
+          : Math.min(115, Math.max(Math.min(edgeA, edgeB) * 0.44, Math.max(edgeA, edgeB) * 0.35));
+
+        const strokeCan = selected ? palette.selectionRing : focused ? palette.active : '#64748b';
+        drawCylinder3D(
+          ctx, centerWorld, worldR, zWaferTop, zRoof, proj,
+          '#1e293b', spec.bodyTop, strokeCan, xrayAlpha,
+          { stripeColor: '#cbd5e1', stripeAngleRad: 0.35, drawCrossVent: worldR * view.scale >= 6 },
+        );
+
         const cTop = P(centerWorld, zRoof);
-        const rBase = Math.max(4, worldR * view.scale * cBase.persp);
-        const rTop = Math.max(4, worldR * view.scale * cTop.persp);
-        const topIsFront = cTop.depth <= cBase.depth;
-
-        const drawCapLid = () => {
-          ctx.beginPath();
-          ctx.arc(cTop.x, cTop.y, rTop, 0, Math.PI * 2);
-          ctx.fillStyle = spec.bodyTop;
-          ctx.fill();
-          ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : '#475569';
-          ctx.lineWidth = selected ? 2 : 1.2;
-          ctx.stroke();
-
-          ctx.beginPath();
-          ctx.arc(cTop.x, cTop.y, rTop * 0.92, -Math.PI * 0.36, Math.PI * 0.36);
-          ctx.closePath();
-          ctx.fillStyle = '#0f172a';
-          ctx.fill();
-
-          if (rTop >= 6) {
-            ctx.beginPath();
-            for (let a = 0; a < 3; a++) {
-              const ang = (a * Math.PI * 2) / 3 - Math.PI / 6;
-              ctx.moveTo(cTop.x, cTop.y);
-              ctx.lineTo(cTop.x + Math.cos(ang) * rTop * 0.55, cTop.y + Math.sin(ang) * rTop * 0.55);
-            }
-            ctx.strokeStyle = 'rgba(71, 85, 105, 0.7)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-          }
-        };
-
-        if (!topIsFront) drawCapLid();
-
-        const dxCyl = cTop.x - cBase.x, dyCyl = cTop.y - cBase.y;
-        const perpAngle = Math.atan2(dyCyl, dxCyl) + Math.PI / 2;
-        const nx = Math.cos(perpAngle), ny = Math.sin(perpAngle);
-
-        ctx.beginPath();
-        ctx.moveTo(cBase.x + nx * rBase, cBase.y + ny * rBase);
-        ctx.lineTo(cTop.x + nx * rTop, cTop.y + ny * rTop);
-        ctx.lineTo(cTop.x - nx * rTop, cTop.y - ny * rTop);
-        ctx.lineTo(cBase.x - nx * rBase, cBase.y - ny * rBase);
-        ctx.closePath();
-        ctx.fillStyle = '#1e293b';
-        ctx.fill();
-        ctx.strokeStyle = '#475569';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(cBase.x + nx * rBase * 0.85, cBase.y + ny * rBase * 0.85);
-        ctx.lineTo(cTop.x + nx * rTop * 0.85, cTop.y + ny * rTop * 0.85);
-        ctx.lineTo(cTop.x + nx * rTop * 0.35, cTop.y + ny * rTop * 0.35);
-        ctx.lineTo(cBase.x + nx * rBase * 0.35, cBase.y + ny * rBase * 0.35);
-        ctx.closePath();
-        ctx.fillStyle = '#cbd5e1';
-        ctx.fill();
-
-        if (topIsFront) drawCapLid();
-        renderRoofLabel(topIsFront ? roofPts : basePts);
+        const cBase = P(centerWorld, zWaferTop);
+        renderRoofLabel(cTop.depth <= cBase.depth ? roofPts : basePts);
         ctx.restore();
         continue;
       }
 
-      // --- 3. 3D BENT GULL-WING METALLIC LEADS ON ICs (`ic`) ---
-      const pinCount = Math.max(0, part.pinEnd - part.pinStart);
-      if (spec.kind === 'ic' && pinCount >= 2 && pinCount <= 48 && screenSize >= 8) {
-        const zMid = zBase + zSign * spec.heightMil * 0.5;
-        const mcx = (basePts[0].x + basePts[1].x + basePts[2].x + basePts[3].x) * 0.25;
-        const mcy = (basePts[0].y + basePts[1].y + basePts[2].y + basePts[3].y) * 0.25;
-        ctx.save();
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = Math.min(4.2, Math.max(1.6, screenSize * 0.075));
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
-          const pin = board.pins[pIdx];
-          const sPad = P(pin, zBase);
-          const sKnee = P(pin, zMid);
-          const sShoulder = lerpPt({ x: mcx, y: mcy }, sKnee, 0.62);
-          ctx.moveTo(sShoulder.x, sShoulder.y);
-          ctx.lineTo(sKnee.x, sKnee.y);
-          ctx.lineTo(sPad.x, sPad.y);
+      // --- 4. WRAP-AROUND 3-SEGMENT SMD PASSIVES (`resistor`, `mlcc`, `tantalum`, `diode`, `led`, `fuse`) ---
+      if (spec.hasEndCaps && spec.capColor && screenSize >= 5) {
+        const sliceQuad = (q: Point[], t0: number, t1: number): Point[] => [
+          lerpPt(q[0], q[3], t0),
+          lerpPt(q[1], q[2], t0),
+          lerpPt(q[1], q[2], t1),
+          lerpPt(q[0], q[3], t1),
+        ];
+
+        const zFilletTop = zBase + zSign * Math.max(4, (zRoof - zBase) * zSign * 0.30);
+        const filletL = sliceQuad(polyWorld, -0.05, 0.04);
+        const filletR = sliceQuad(polyWorld, 0.96, 1.05);
+        if (screenSize >= 9) {
+          const filDepthL = P(lerpPt(filletL[0], filletL[2], 0.5), zBase).depth;
+          const filDepthR = P(lerpPt(filletR[0], filletR[2], 0.5), zBase).depth;
+          const fillets = [
+            { q: filletL, d: filDepthL },
+            { q: filletR, d: filDepthR },
+          ].sort((a, b) => b.d - a.d);
+          for (const fil of fillets) {
+            drawExtrudedPrism3D(ctx, fil.q, zBase, zFilletTop, proj, '#cbd5e1', '#94a3b8', 'rgba(100,116,139,0.55)', xrayAlpha * 0.9);
+          }
         }
-        ctx.stroke();
+
+        const capL = sliceQuad(polyWorld, 0, 0.22);
+        const midBody = sliceQuad(polyWorld, 0.22, 0.78);
+        const capR = sliceQuad(polyWorld, 0.78, 1.0);
+
+        const segs = [
+          {
+            poly: capL,
+            top: spec.capColor,
+            side: spec.capColor,
+            cap: spec.capColor,
+            capShade: '#cbd5e1',
+            skip: new Set([2]),
+            depth: P(lerpPt(capL[0], capL[2], 0.5), (zBodyBot + zRoof) * 0.5).depth,
+          },
+          {
+            poly: midBody,
+            top: spec.bodyTop,
+            side: spec.bodySide,
+            cap: undefined,
+            capShade: undefined,
+            skip: new Set([0, 2]),
+            depth: P(lerpPt(midBody[0], midBody[2], 0.5), (zBodyBot + zRoof) * 0.5).depth,
+          },
+          {
+            poly: capR,
+            top: spec.capColor,
+            side: '#e2e8f0',
+            cap: spec.capColor,
+            capShade: '#cbd5e1',
+            skip: new Set([0]),
+            depth: P(lerpPt(capR[0], capR[2], 0.5), (zBodyBot + zRoof) * 0.5).depth,
+          },
+        ].sort((a, b) => b.depth - a.depth);
+
+        const strokePass = selected ? palette.selectionRing : focused ? palette.active : 'rgba(71, 85, 105, 0.55)';
+        for (const s of segs) {
+          drawExtrudedPrism3D(ctx, s.poly, zBodyBot, zRoof, proj, s.top, s.side, strokePass, xrayAlpha, s.cap, s.capShade, s.skip);
+        }
+
+        const roofDepthPassive = (roofPts[0].depth + roofPts[1].depth + roofPts[2].depth + roofPts[3].depth) * 0.25;
+        const baseDepthPassive = (basePts[0].depth + basePts[1].depth + basePts[2].depth + basePts[3].depth) * 0.25;
+        const roofFacing = roofDepthPassive <= baseDepthPassive;
+        if (roofFacing && (spec.kind === 'diode' || spec.kind === 'tantalum') && screenSize >= 8) {
+          const k0 = lerpPt(roofPts[0], roofPts[3], 0.30);
+          const k1 = lerpPt(roofPts[1], roofPts[2], 0.30);
+          ctx.save();
+          ctx.globalAlpha *= xrayAlpha;
+          ctx.strokeStyle = spec.accentColor || '#f8fafc';
+          ctx.lineWidth = Math.max(1.8, screenSize * 0.085);
+          ctx.beginPath();
+          ctx.moveTo(k0.x, k0.y);
+          ctx.lineTo(k1.x, k1.y);
+          ctx.stroke();
+          ctx.restore();
+        } else if (roofFacing && spec.kind === 'led' && screenSize >= 7) {
+          const rcx = (roofPts[0].x + roofPts[1].x + roofPts[2].x + roofPts[3].x) * 0.25;
+          const rcy = (roofPts[0].y + roofPts[1].y + roofPts[2].y + roofPts[3].y) * 0.25;
+          ctx.save();
+          ctx.globalAlpha *= xrayAlpha;
+          ctx.beginPath();
+          ctx.arc(rcx, rcy, Math.max(2, screenSize * 0.18), 0, Math.PI * 2);
+          ctx.fillStyle = '#f59e0b';
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Crisp outer rim highlight stroke on roof
+        if (roofFacing) {
+          ctx.save();
+          ctx.beginPath();
+          roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+          ctx.closePath();
+          ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
+          ctx.lineWidth = selected ? 2.2 : focused ? 1.7 : 0.9;
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        renderRoofLabel(roofFacing ? roofPts : basePts);
         ctx.restore();
+        continue;
       }
 
       const baseDepth = (basePts[0].depth + basePts[1].depth + basePts[2].depth + basePts[3].depth) * 0.25;
@@ -1577,117 +2298,106 @@ export function renderBoard3D(
       const centerDepth = (baseDepth + roofDepth) * 0.5;
       const roofIsFront = roofDepth <= baseDepth;
 
-      const drawRoofFace = () => {
-        ctx.beginPath();
-        roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-        ctx.closePath();
+      // Helper to render depth-sorted perpendicular 3D gull-wing metallic IC leads (`back` before body, `front` after walls!)
+      const drawIcLeads = (frontPass: boolean) => {
+        if (spec.kind !== 'ic' || pinCount < 2 || pinCount > 64 || screenSize < 8) return;
+        const zShoulder = (zBodyBot + zRoof) * 0.52;
+        const zFoot = zBase + zSign * 2;
+        const leadW = Math.min(3.6, Math.max(1.4, screenSize * 0.05));
+
+        const segLeads: { sExit: ProjectedPoint; sShoulder: ProjectedPoint; sAnkle: ProjectedPoint; sToe: ProjectedPoint }[] = [];
+        for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
+          const pin = board.pins[pIdx];
+          // Find closest side edge of `polyWorld` so pins exit 100% perpendicular (`| | | |`)!
+          let bestDistSq = Infinity;
+          let bestFoot = polyWorld[0];
+          for (let e = 0; e < 4; e++) {
+            const a = polyWorld[e];
+            const b = polyWorld[(e + 1) % 4];
+            const abx = b.x - a.x, aby = b.y - a.y;
+            const abLenSq = abx * abx + aby * aby || 1;
+            const t = Math.max(0.03, Math.min(0.97, ((pin.x - a.x) * abx + (pin.y - a.y) * aby) / abLenSq));
+            const projEdge = { x: a.x + abx * t, y: a.y + aby * t };
+            const dSq = (pin.x - projEdge.x) ** 2 + (pin.y - projEdge.y) ** 2;
+            if (dSq < bestDistSq) {
+              bestDistSq = dSq;
+              bestFoot = projEdge;
+            }
+          }
+          const dx = pin.x - bestFoot.x, dy = pin.y - bestFoot.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const nx = dx / dist, ny = dy / dist;
+          const pExitWorld = { x: bestFoot.x - nx * 4, y: bestFoot.y - ny * 4 };
+          const pShoulderWorld = { x: bestFoot.x + nx * (dist * 0.34), y: bestFoot.y + ny * (dist * 0.34) };
+          const sExit = P(pExitWorld, zShoulder);
+          const sShoulder = P(pShoulderWorld, zShoulder);
+          const leadDepth = (sExit.depth + sShoulder.depth) * 0.5;
+          if ((leadDepth <= centerDepth + 0.05) !== frontPass) continue;
+
+          const sAnkle = P({ x: bestFoot.x + nx * (dist * 0.72), y: bestFoot.y + ny * (dist * 0.72) }, zFoot);
+          const sToe = P(pin, zFoot);
+          segLeads.push({ sExit, sShoulder, sAnkle, sToe });
+        }
+        if (!segLeads.length) return;
 
         ctx.save();
         ctx.globalAlpha *= xrayAlpha;
-        ctx.fillStyle = spec.kind === 'bga' ? '#15803d' : spec.bodyTop;
-        ctx.fill();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const traceAll = () => {
+          ctx.beginPath();
+          for (const l of segLeads) {
+            ctx.moveTo(l.sExit.x, l.sExit.y);
+            ctx.lineTo(l.sShoulder.x, l.sShoulder.y);
+            ctx.lineTo(l.sAnkle.x, l.sAnkle.y);
+            ctx.lineTo(l.sToe.x, l.sToe.y);
+          }
+        };
+        traceAll();
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = leadW + 1.0;
+        ctx.stroke();
+
+        traceAll();
+        ctx.strokeStyle = '#f1f5f9';
+        ctx.lineWidth = leadW * 0.72;
+        ctx.stroke();
         ctx.restore();
       };
 
+      // Far-side perpendicular gull-wing leads drawn behind the molded IC epoxy package
+      drawIcLeads(false);
+
+      // --- 5. EXACT VIEW-SPACE CULLING EXTRUDED 3D PRISM FOR ICs, BGAs, INDUCTORS, CRYSTALS ---
+      const strokeCol = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
+      drawExtrudedPrism3D(
+        ctx,
+        polyWorld,
+        zBodyBot,
+        zRoof,
+        proj,
+        spec.kind === 'bga' ? '#15803d' : spec.bodyTop,
+        spec.bodySide,
+        strokeCol,
+        xrayAlpha,
+        undefined,
+        undefined,
+        undefined,
+        isFarSideUnderBoard,
+      );
+
+      // Front-side gull-wing leads emerging perpendicularly from the package flanks onto PCB pads
+      drawIcLeads(true);
+
+      // --- 6. PACKAGE-SPECIFIC STANDING / 3D ROOF DETAILS ---
       if (!roofIsFront) {
-        drawRoofFace();
-      }
-
-      // --- 4. EXTRUDED 3D SIDE WALLS (Front-wall culled to prevent dark seam bleed) ---
-      const extrudePx = Math.hypot(roofPts[0].x - basePts[0].x, roofPts[0].y - basePts[0].y);
-      if (screenSize >= 3 && extrudePx >= 0.6) {
-        const walls = [0, 1, 2, 3]
-          .map((k) => {
-            const next = (k + 1) % 4;
-            const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[k].depth + roofPts[next].depth) * 0.25;
-            return { k, next, wallDepth };
-          })
-          .filter((wl) => isFarSideUnderBoard || wl.wallDepth <= centerDepth + 0.05)
-          .sort((a, b) => b.wallDepth - a.wallDepth);
-
-        for (const { k, next } of walls) {
-          ctx.beginPath();
-          ctx.moveTo(basePts[k].x, basePts[k].y);
-          ctx.lineTo(basePts[next].x, basePts[next].y);
-          ctx.lineTo(roofPts[next].x, roofPts[next].y);
-          ctx.lineTo(roofPts[k].x, roofPts[k].y);
-          ctx.closePath();
-
-          ctx.save();
-          ctx.globalAlpha *= xrayAlpha;
-          const isEndCapWall = spec.hasEndCaps && (k === 0 || k === 2);
-          ctx.fillStyle = isEndCapWall && spec.capColor ? spec.capColor : spec.bodySide;
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
-          ctx.lineWidth = 0.8;
-          ctx.stroke();
-          ctx.restore();
-        }
-      }
-
-      // --- 5. 3D ROOF FACE (Drawn last when facing camera; underside draws base footprint last) ---
-      if (roofIsFront) {
-        drawRoofFace();
-      } else {
-        ctx.beginPath();
-        basePts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-        ctx.closePath();
-        ctx.save();
-        ctx.globalAlpha *= xrayAlpha;
-        ctx.fillStyle = spec.bodySide;
-        ctx.fill();
-        ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
-        ctx.lineWidth = selected ? 2.0 : 1.0;
-        ctx.stroke();
-        ctx.restore();
         renderRoofLabel(basePts);
         ctx.restore();
         continue;
       }
 
-      // --- 6. PACKAGE-SPECIFIC STANDING / 3D ROOF DETAILS ---
-      if (spec.hasEndCaps && spec.capColor && screenSize >= 5) {
-        ctx.save();
-        ctx.globalAlpha *= xrayAlpha * 0.98;
-        fillPassiveEndCaps(ctx, roofPts, 0.25, spec.capColor, 'rgba(71, 85, 105, 0.8)');
-        ctx.restore();
-
-        if (spec.kind === 'mlcc' && screenSize >= 8) {
-          const m0 = lerpPt(lerpPt(roofPts[0], roofPts[1], 0.34), lerpPt(roofPts[3], roofPts[2], 0.34), 0.28);
-          const m1 = lerpPt(lerpPt(roofPts[0], roofPts[1], 0.34), lerpPt(roofPts[3], roofPts[2], 0.34), 0.72);
-          ctx.save();
-          ctx.strokeStyle = 'rgba(255, 240, 215, 0.45)';
-          ctx.lineWidth = Math.max(1.2, screenSize * 0.08);
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(m0.x, m0.y);
-          ctx.lineTo(m1.x, m1.y);
-          ctx.stroke();
-          ctx.restore();
-        }
-
-        if ((spec.kind === 'diode' || spec.kind === 'tantalum') && screenSize >= 8) {
-          const k0 = lerpPt(roofPts[0], roofPts[3], 0.34);
-          const k1 = lerpPt(roofPts[1], roofPts[2], 0.34);
-          ctx.save();
-          ctx.strokeStyle = spec.accentColor || '#f8fafc';
-          ctx.lineWidth = Math.max(1.8, screenSize * 0.09);
-          ctx.beginPath();
-          ctx.moveTo(k0.x, k0.y);
-          ctx.lineTo(k1.x, k1.y);
-          ctx.stroke();
-          ctx.restore();
-        } else if (spec.kind === 'led' && screenSize >= 7) {
-          const rcx = (roofPts[0].x + roofPts[1].x + roofPts[2].x + roofPts[3].x) * 0.25;
-          const rcy = (roofPts[0].y + roofPts[1].y + roofPts[2].y + roofPts[3].y) * 0.25;
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(rcx, rcy, Math.max(2, screenSize * 0.18), 0, Math.PI * 2);
-          ctx.fillStyle = '#f59e0b';
-          ctx.fill();
-          ctx.restore();
-        }
-      } else if (spec.kind === 'bga' && screenSize >= 12) {
+      if (spec.kind === 'bga' && screenSize >= 12) {
         const dieRoof = insetQuad(roofPts, 0.14, 0.14);
         ctx.save();
         ctx.beginPath();
@@ -1710,96 +2420,58 @@ export function renderBoard3D(
         ctx.fill();
         ctx.restore();
       } else if (spec.kind === 'inductor' && screenSize >= 10) {
-        // Standing 3D Cylindrical Ferrite Drum Core + Copper Winding rising out of the inductor block!
         const centerWorld = {
           x: (polyWorld[0].x + polyWorld[2].x) * 0.5,
           y: (polyWorld[0].y + polyWorld[2].y) * 0.5,
         };
-        const zDrumTop = zBase + zSign * (spec.heightMil * 1.28);
-        const cBot = P(centerWorld, zRoof);
-        const cTop = P(centerWorld, zDrumTop);
-        const d01 = Math.hypot(roofPts[1].x - roofPts[0].x, roofPts[1].y - roofPts[0].y);
-        const d12 = Math.hypot(roofPts[2].x - roofPts[1].x, roofPts[2].y - roofPts[1].y);
-        const rBoss = Math.min(d01, d12) * 0.38;
-        if (rBoss >= 3) {
-          const dxCyl = cTop.x - cBot.x, dyCyl = cTop.y - cBot.y;
-          const perpAngle = Math.atan2(dyCyl, dxCyl) + Math.PI / 2;
-          const nx = Math.cos(perpAngle), ny = Math.sin(perpAngle);
-          const capFront = cTop.depth <= cBot.depth;
-
-          const drawDrumCap = () => {
-            ctx.beginPath();
-            ctx.arc(cTop.x, cTop.y, rBoss * 1.06, 0, Math.PI * 2);
-            ctx.fillStyle = '#1e242d';
-            ctx.fill();
-            ctx.strokeStyle = '#f59e0b';
-            ctx.lineWidth = 1.4;
-            ctx.stroke();
-          };
-
-          ctx.save();
-          if (!capFront) drawDrumCap();
-
-          // Copper winding cylinder wall
-          ctx.beginPath();
-          ctx.moveTo(cBot.x + nx * rBoss, cBot.y + ny * rBoss);
-          ctx.lineTo(cTop.x + nx * rBoss, cTop.y + ny * rBoss);
-          ctx.lineTo(cTop.x - nx * rBoss, cTop.y - ny * rBoss);
-          ctx.lineTo(cBot.x - nx * rBoss, cBot.y - ny * rBoss);
-          ctx.closePath();
-          ctx.fillStyle = '#b45309';
-          ctx.fill();
-
-          if (capFront) drawDrumCap();
-          ctx.restore();
+        const e01 = Math.hypot(polyWorld[1].x - polyWorld[0].x, polyWorld[1].y - polyWorld[0].y);
+        const e12 = Math.hypot(polyWorld[2].x - polyWorld[1].x, polyWorld[2].y - polyWorld[1].y);
+        const worldR = Math.min(e01, e12) * 0.34;
+        if (worldR * view.scale >= 3) {
+          const zDrumTop = zBase + zSign * (spec.heightMil * 1.24);
+          drawCylinder3D(
+            ctx, centerWorld, worldR, zRoof, zDrumTop, proj,
+            '#b45309', '#1e242d', '#f59e0b', xrayAlpha,
+            { rimStroke: '#f59e0b' },
+          );
         }
-      } else if (spec.kind === 'connector' && screenSize >= 10) {
-        // Recessed mating cavity + tall standing 3D gold header posts protruding up from the shroud!
-        const slotRoof = insetQuad(roofPts, 0.08, 0.24);
+      } else if (spec.kind === 'ic' && part.pinStart < board.pins.length && screenSize >= 10) {
+        const bevel = insetQuad(roofPts, 0.05, 0.05);
         ctx.save();
         ctx.beginPath();
-        slotRoof.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+        bevel.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
         ctx.closePath();
-        ctx.fillStyle = 'rgba(10, 14, 19, 0.92)';
-        ctx.fill();
-        ctx.strokeStyle = '#facc15';
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.24)';
+        ctx.lineWidth = 0.85;
         ctx.stroke();
 
-        if (pinCount <= 40) {
-          ctx.strokeStyle = '#facc15';
-          ctx.lineWidth = Math.min(4, Math.max(1.8, screenSize * 0.045));
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
-            const pin = board.pins[pIdx];
-            const pBot = P(pin, zBase + zSign * spec.heightMil * 0.15);
-            const pTop = P(pin, zRoof + zSign * spec.heightMil * 0.18);
-            ctx.moveTo(pBot.x, pBot.y);
-            ctx.lineTo(pTop.x, pTop.y);
-          }
-          ctx.stroke();
+        // Pin-1 recessed mold crater neatly placed in Pin-1 corner (away from center chip label!)
+        const sp1 = P(board.pins[part.pinStart], zRoof);
+        let bestCorner = 0;
+        let bestDist = Infinity;
+        for (let k = 0; k < 4; k++) {
+          const d = Math.hypot(roofPts[k].x - sp1.x, roofPts[k].y - sp1.y);
+          if (d < bestDist) { bestDist = d; bestCorner = k; }
         }
-        ctx.restore();
-      } else if (spec.kind === 'ic' && part.pinStart < board.pins.length && screenSize >= 10) {
         const rcx = (roofPts[0].x + roofPts[1].x + roofPts[2].x + roofPts[3].x) * 0.25;
         const rcy = (roofPts[0].y + roofPts[1].y + roofPts[2].y + roofPts[3].y) * 0.25;
-        const sp1 = P(board.pins[part.pinStart], zRoof);
-        const dimple = lerpPt({ x: rcx, y: rcy }, sp1, 0.5);
-        ctx.save();
+        const dimple = lerpPt({ x: rcx, y: rcy }, roofPts[bestCorner], 0.64);
+        const dR = Math.min(3.5, Math.max(1.8, screenSize * 0.05));
         ctx.beginPath();
-        ctx.arc(dimple.x, dimple.y, Math.min(3.8, Math.max(1.8, screenSize * 0.06)), 0, Math.PI * 2);
-        ctx.fillStyle = '#f8fafc';
+        ctx.arc(dimple.x, dimple.y, dR, 0, Math.PI * 2);
+        ctx.fillStyle = '#0f172a';
         ctx.fill();
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.72)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
         ctx.restore();
       }
 
-      // Roof bevel stroke
       ctx.beginPath();
       roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.closePath();
-      ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
-      ctx.lineWidth = selected ? 2.2 : focused ? 1.7 : 1.1;
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = selected ? 2.2 : focused ? 1.7 : 1.05;
       ctx.stroke();
 
       renderRoofLabel(roofPts);
@@ -1818,7 +2490,7 @@ export function renderBoard3D(
     drawSideComponentsAndPins(farSide, true);
   }
 
-  // Draw 3D Extruded PCB Substrate (solid FR-4 beveled edge band + solder mask)
+  // Draw 3D Extruded PCB Substrate (depth-sorted directionally lit FR-4 fiberglass edge band + solder mask)
   if (layers.outline && (board.outline.length > 1 || (board.outlineSegments && board.outlineSegments.length > 0))) {
     const zFar = topFacesCamera ? zBotSurface : zTopSurface;
     const zNear = topFacesCamera ? zTopSurface : zBotSurface;
@@ -1832,31 +2504,45 @@ export function renderBoard3D(
 
     if (board.outline.length > 2) {
       const step = Math.max(1, Math.floor(board.outline.length / 180));
-      ctx.fillStyle = '#5c4922';
-      ctx.strokeStyle = 'rgba(212, 175, 55, 0.28)';
-      ctx.lineWidth = 0.7;
+      const boardMid = P(proj.center, 0);
+      const edgeQuads: { pts: ProjectedPoint[]; fill: string; depth: number }[] = [];
+      let contourStart = board.outline[0];
       for (let i = 0; i < board.outline.length - step; i += step) {
         const p0 = board.outline[i];
         const p1 = board.outline[Math.min(i + step, board.outline.length - 1)];
+        if (i > 0 && p0.x === contourStart.x && p0.y === contourStart.y) {
+          contourStart = p1;
+          continue;
+        }
         if (p0.x === p1.x && p0.y === p1.y) continue;
         const f0 = P(p0, zFar);
         const f1 = P(p1, zFar);
         const n1 = P(p1, zNear);
         const n0 = P(p0, zNear);
+        const quad = [f0, f1, n1, n0];
+        const info = faceViewInfo(quad, boardMid, proj.camDist);
+        edgeQuads.push({ pts: quad, fill: shadeHex('#685227', info.lit), depth: info.depth });
+      }
+      edgeQuads.sort((a, b) => b.depth - a.depth);
+      ctx.strokeStyle = 'rgba(212, 175, 55, 0.25)';
+      ctx.lineWidth = 0.65;
+      for (const eq of edgeQuads) {
         ctx.beginPath();
-        ctx.moveTo(f0.x, f0.y);
-        ctx.lineTo(f1.x, f1.y);
-        ctx.lineTo(n1.x, n1.y);
-        ctx.lineTo(n0.x, n0.y);
+        ctx.moveTo(eq.pts[0].x, eq.pts[0].y);
+        ctx.lineTo(eq.pts[1].x, eq.pts[1].y);
+        ctx.lineTo(eq.pts[2].x, eq.pts[2].y);
+        ctx.lineTo(eq.pts[3].x, eq.pts[3].y);
         ctx.closePath();
+        ctx.fillStyle = eq.fill;
         ctx.fill();
+        ctx.stroke();
       }
     }
 
     ctx.beginPath();
     traceMultiContour3D(ctx, board.outline, board.outlineSegments, P, zNear);
     if (board.outline.length > 2) {
-      const alpha = bothSidesActive ? 0.78 : 0.94;
+      const alpha = bothSidesActive ? 0.86 : 0.96;
       ctx.fillStyle = isClassic
         ? `rgba(16, 78, 52, ${alpha})`
         : `rgba(13, 35, 39, ${alpha})`;

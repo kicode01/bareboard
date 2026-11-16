@@ -1,10 +1,10 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import type { Board, Layers, Part, Point, Selection, Side } from '../types';
 import type { BoardIndex } from '../lib/search';
 import type { Palette } from '../lib/theme';
 import { fitView, focusBounds, makeTransform, pointInPolygon, zoomAt, type View } from '../lib/geometry';
-import { MaterialIcon } from '@/components/MaterialIcon';
+import { BrandMark } from '@/components/BrandMark';
 import { Button } from '@/components/ui/button';
 import {
   classifyPartPackage,
@@ -311,7 +311,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
     }
   }, [focusToken]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !size.w || !size.h) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -911,9 +911,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  // Pin & test-nail hit testing (works seamlessly in both 2D and 3D modes!)
+  // Pin & test-nail hit testing (works seamlessly in both 2D and 3D modes, with generous touch hit area)
   const nearest = useCallback((sx: number, sy: number) => {
     if (!board || !tr) return null;
+    const minTouchR = lastPointerType.current === 'touch' ? 19 : 12;
 
     if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
       const best3d = { kind: 'pin' as 'pin' | 'nail', index: -1, d: Infinity };
@@ -922,7 +923,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
           if (!sideVisible(pin.side, layers)) return;
           const { zBase } = getSideZ(pin.side, layers);
           const sp = proj3d.project3D(pin, zBase);
-          const hitPx = Math.max(12, pin.radius * view.scale * sp.persp * 1.15);
+          const hitPx = Math.max(minTouchR, pin.radius * view.scale * sp.persp * 1.15);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
           if (d < hitPx && d < best3d.d) {
             best3d.kind = 'pin';
@@ -937,7 +938,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
           const { zBase } = getSideZ(nail.side, layers);
           const sp = proj3d.project3D(nail, zBase);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
-          if (d < 12 && d < best3d.d) {
+          if (d < minTouchR && d < best3d.d) {
             best3d.kind = 'nail';
             best3d.index = i;
             best3d.d = d;
@@ -948,7 +949,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
     }
 
     const world = tr.toWorld(sx, sy);
-    const limit = 14 / view.scale;
+    const limit = (lastPointerType.current === 'touch' ? 20 : 14) / view.scale;
     const best = { kind: 'pin' as 'pin' | 'nail', index: -1, d: Infinity };
     if (layers.pins) {
       board.pins.forEach((pin, i) => {
@@ -968,7 +969,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
     return best.index >= 0 ? best : null;
   }, [board, tr, proj3d, renderMode, view.scale, layers]);
 
-  // Component polygon hit-testing in both 2D and 3D (checks both 3D roof and 3D base footprint!)
+  // Component polygon hit-testing in both 2D and 3D (checks roof, base, and extruded 3D side walls!)
   const findPartAtScreen = useCallback((sx: number, sy: number): number => {
     if (!board || !tr) return -1;
     if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
@@ -985,6 +986,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
         const baseQuad = poly.map((pt) => proj3d.project3D(pt, zBase));
         if (pointInPolygon(screenPt, roofQuad) || pointInPolygon(screenPt, baseQuad)) {
           return i;
+        }
+        for (let k = 0; k < poly.length; k++) {
+          const next = (k + 1) % poly.length;
+          if (pointInPolygon(screenPt, [baseQuad[k], baseQuad[next], roofQuad[next], roofQuad[k]])) {
+            return i;
+          }
         }
       }
       return -1;
@@ -1064,6 +1071,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
         x: p.x, y: p.y,
         timer: window.setTimeout(() => {
           longPress.current = null;
+          if (drag.current?.moved || pointers.current.size !== 1) return;
+          drag.current = null;
           quick.current = { view };
           setMagnifying(true);
           if (renderMode === '3d') {
@@ -1071,11 +1080,11 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
           } else {
             onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
           }
-        }, 420),
+        }, 440),
       };
     }
 
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch {}
     const invert3dAction = e.shiftKey || e.button === 1 || e.button === 2;
     const orbiting = renderMode === '3d' && (invert3dAction ? dragMode3d !== 'orbit' : dragMode3d === 'orbit');
     const pivotWorld = proj3d
@@ -1120,7 +1129,10 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
 
     if (drag.current) {
       const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
+      if (Math.abs(dx) + Math.abs(dy) > 3) {
+        drag.current.moved = true;
+        cancelLongPress();
+      }
       if (drag.current.orbiting && board) {
         const nextCam: Camera3D = {
           yawDeg: ((drag.current.yawDeg + dx * 0.45 + 540) % 360) - 180,
@@ -1322,8 +1334,8 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
       {!board && (
         <div className="canvas-empty pointer-events-none absolute inset-0 z-4 flex items-center justify-center p-4">
           <div className="empty-card pointer-events-auto max-w-[420px] rounded-xl border border-border-strong bg-glass p-6 text-center shadow-2xl backdrop-blur-md">
-            <div className="empty-mark mb-2 flex justify-center text-primary">
-              <MaterialIcon name="developer_board" size={34} />
+            <div className="empty-mark mb-3 flex justify-center">
+              <BrandMark size={44} />
             </div>
             <div className="empty-title text-sm font-semibold text-foreground">Drop any boardview file here</div>
             <div className="empty-sub mt-1.5 text-xs leading-relaxed text-muted-foreground">
