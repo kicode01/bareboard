@@ -88,7 +88,7 @@ export default function App() {
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
   const [rotation, setRotation] = useState(0);
-  const [renderMode, setRenderMode] = useState<RenderMode>('3d');
+  const [renderMode, setRenderMode] = useState<RenderMode>('realistic');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [highlightNet, setHighlightNet] = useState<string | null>(null);
   const [query, setQuery] = useState('');

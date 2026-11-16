@@ -1080,12 +1080,15 @@ export function renderBoard3D(
   focusParts: Set<number>,
   palette: Palette,
   isClassic: boolean,
+  showGizmo = true,
+  preferredFrontSide: 'top' | 'bottom' = 'top',
 ): void {
   const { w, h } = size;
   const P = proj.project3D;
   const zTopSurface = BOARD_HALF_THICKNESS_MIL;
   const zBotSurface = -BOARD_HALF_THICKNESS_MIL;
-  const topFacesCamera = proj.topFacesCamera;
+  // If tilted past 90° in 3D, flip which side faces the camera; otherwise use preferredFrontSide
+  const topFacesCamera = proj.cosP >= 0 ? preferredFrontSide === 'top' : preferredFrontSide !== 'top';
 
   const activeNetInfo = highlightNet && index ? index.nets.get(highlightNet) : undefined;
   const hasFilter = Boolean(selection || (highlightNet && highlightNet !== 'UNCONNECTED') || focusParts.size > 0);
@@ -1114,11 +1117,16 @@ export function renderBoard3D(
   }
 
   // 2. Helper to draw a side's components + pins in proper 3D depth order
-  const drawSideComponentsAndPins = (side: 'top' | 'bottom') => {
+  const drawSideComponentsAndPins = (side: 'top' | 'bottom', isFarSideUnderBoard: boolean) => {
     const sideEnabled = side === 'top' ? layers.top : layers.bottom;
     if (!sideEnabled) return;
 
-    const { zBase, zSign } = getSideZ(side, layers, topFacesCamera);
+    const zBase = isFarSideUnderBoard
+      ? ( proj.cosP >= 0 ? zBotSurface : zTopSurface )
+      : ( proj.cosP >= 0 ? zTopSurface : zBotSurface );
+    const zSign = isFarSideUnderBoard
+      ? ( proj.cosP >= 0 ? -1 : 1 )
+      : ( proj.cosP >= 0 ? 1 : -1 );
 
     // 2a. Solder pads / BGA balls on the PCB surface (z = zBase)
     const drawPinsOnSurface = (overlayPass: boolean) => {
@@ -1356,7 +1364,9 @@ export function renderBoard3D(
 
       // Helper to render the 3D Silkscreen Label on `labelQuad`
       const renderRoofLabel = (labelQuad: ProjectedPoint[]) => {
-        if (!layers.labels || (isDenseBoard && !spec.showLabelAtAllZooms && screenSize < 26 && !selected && !focused)) {
+        if (!layers.labels) return;
+        const minScreenForPassive = isFarSideUnderBoard ? 18 : 32;
+        if (isDenseBoard && !spec.showLabelAtAllZooms && screenSize < minScreenForPassive && !selected && !focused) {
           return;
         }
         const rcx = (labelQuad[0].x + labelQuad[1].x + labelQuad[2].x + labelQuad[3].x) * 0.25;
@@ -1380,10 +1390,10 @@ export function renderBoard3D(
           ctx.font = `700 ${fontPx}px ui-monospace, SFMono-Regular, Menlo, monospace`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.88)';
-          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = isFarSideUnderBoard ? 'rgba(0, 0, 0, 0.55)' : 'rgba(0, 0, 0, 0.88)';
+          ctx.lineWidth = isFarSideUnderBoard ? 1.8 : 2.5;
           ctx.strokeText(part.name, 0, 0);
-          ctx.fillStyle = selected || focused ? '#fde047' : '#ffffff';
+          ctx.fillStyle = selected || focused ? '#fde047' : (isFarSideUnderBoard ? '#94a3b8' : '#ffffff');
           ctx.fillText(part.name, 0, 0);
           ctx.restore();
         } else if (selected || focused || (!isDenseBoard && screenSize >= 8)) {
@@ -1726,13 +1736,13 @@ export function renderBoard3D(
   const nearSide: 'top' | 'bottom' = topFacesCamera ? 'top' : 'bottom';
 
   if (bothSidesActive) {
-    drawSideComponentsAndPins(farSide);
+    drawSideComponentsAndPins(farSide, true);
   }
 
   // Draw 3D Extruded PCB Substrate
   if (layers.outline && (board.outline.length > 1 || (board.outlineSegments && board.outlineSegments.length > 0))) {
-    const zFar = topFacesCamera ? zBotSurface : zTopSurface;
-    const zNear = topFacesCamera ? zTopSurface : zBotSurface;
+    const zFar = proj.cosP >= 0 ? zBotSurface : zTopSurface;
+    const zNear = proj.cosP >= 0 ? zTopSurface : zBotSurface;
 
     ctx.save();
     ctx.beginPath();
@@ -1771,11 +1781,11 @@ export function renderBoard3D(
   }
 
   if (bothSidesActive) {
-    drawSideComponentsAndPins(nearSide);
+    drawSideComponentsAndPins(nearSide, false);
   } else if (layers.top) {
-    drawSideComponentsAndPins('top');
+    drawSideComponentsAndPins('top', false);
   } else if (layers.bottom) {
-    drawSideComponentsAndPins('bottom');
+    drawSideComponentsAndPins('bottom', false);
   }
 
   // 4. 3D Parabolic Net Airwire Arcs
@@ -1847,8 +1857,10 @@ export function renderBoard3D(
     }
   }
 
-  // 6. 3D Orientation Compass Gizmo
-  draw3DGizmo(ctx, w, rotation, cam, flipX, flipY, palette);
+  // 6. 3D Orientation Compass Gizmo (only in interactive 3D orbit mode)
+  if (showGizmo) {
+    draw3DGizmo(ctx, w, rotation, cam, flipX, flipY, palette);
+  }
 
   void tr2d;
 }

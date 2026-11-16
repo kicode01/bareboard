@@ -101,6 +101,12 @@ export function BoardCanvas(props: Props) {
   const [hover, setHover] = useState<Hover | null>(null);
   const [cam3d, setCam3d] = useState<Camera3D>({ pitchDeg: 48, yawDeg: -16 });
   const [dragMode3d, setDragMode3d] = useState<'orbit' | 'pan'>('orbit');
+  const [preferredFrontSide, setPreferredFrontSide] = useState<'top' | 'bottom'>('top');
+
+  useEffect(() => {
+    if (layers.top && !layers.bottom) setPreferredFrontSide('top');
+    else if (layers.bottom && !layers.top) setPreferredFrontSide('bottom');
+  }, [layers.top, layers.bottom]);
 
   // --- touch state -----------------------------------------------------------
   const pointers = useRef<Map<number, Point>>(new Map());
@@ -124,11 +130,16 @@ export function BoardCanvas(props: Props) {
     [board, size.w, size.h, view, flipX, flipY, rotation],
   );
 
+  const effectiveCam = useMemo<Camera3D>(
+    () => (renderMode === '3d' ? cam3d : { pitchDeg: 0, yawDeg: 0 }),
+    [renderMode, cam3d],
+  );
+
   const proj3d = useMemo(
-    () => (board && size.w && size.h && renderMode === '3d'
-      ? makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, cam3d)
+    () => (board && size.w && size.h && (renderMode === '3d' || renderMode === 'realistic')
+      ? makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, effectiveCam)
       : null),
-    [board, size.w, size.h, view, flipX, flipY, rotation, renderMode, cam3d],
+    [board, size.w, size.h, view, flipX, flipY, rotation, renderMode, effectiveCam],
   );
 
   // Pivots the 3D camera around whatever world point is currently at the center of the viewport!
@@ -224,12 +235,14 @@ export function BoardCanvas(props: Props) {
     const isClassic = palette.bg === '#ffffff';
     const isRealistic = renderMode === 'realistic';
 
-    // --- 3D EXTRUDED BOARD RENDERER -------------------------------------------
-    if (renderMode === '3d' && proj3d) {
+    // --- 2D REALISTIC & 3D EXTRUDED BOARD RENDERER ----------------------------
+    if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
       renderBoard3D(
         ctx, board, index, layers, view, size, tr, proj3d,
-        cam3d, flipX, flipY, rotation,
+        effectiveCam, flipX, flipY, rotation,
         selection, highlightNet, focusParts, palette, isClassic,
+        renderMode === '3d',
+        preferredFrontSide,
       );
 
       // Scale bar at bottom-left
@@ -245,7 +258,10 @@ export function BoardCanvas(props: Props) {
       ctx.fillStyle = palette.scaleText;
       ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`3D (TILT ${Math.round(cam3d.pitchDeg)}° · SPIN ${Math.round(cam3d.yawDeg)}°) · ${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
+      const label = renderMode === '3d'
+        ? `3D (TILT ${Math.round(cam3d.pitchDeg)}° · SPIN ${Math.round(cam3d.yawDeg)}°) · ${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`
+        : `${barMils} mil  /  ${(barMils * 0.0254).toFixed(2)} mm`;
+      ctx.fillText(label, 20, h - 32);
       return;
     }
 
@@ -805,7 +821,7 @@ export function BoardCanvas(props: Props) {
     ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`${barMils} mil  /  ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
-  }, [board, index, layers, view, size, tr, proj3d, cam3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
+  }, [board, index, layers, view, size, tr, proj3d, effectiveCam, preferredFrontSide, cam3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
 
   const localPoint = (e: ReactPointerEvent | ReactWheelEvent | ReactMouseEvent): Point => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -816,12 +832,13 @@ export function BoardCanvas(props: Props) {
   const nearest = useCallback((sx: number, sy: number) => {
     if (!board || !tr) return null;
 
-    if (renderMode === '3d' && proj3d) {
+    if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
       const best3d = { kind: 'pin' as 'pin' | 'nail', index: -1, d: Infinity };
+      const topFaces = proj3d.cosP >= 0 ? preferredFrontSide === 'top' : preferredFrontSide !== 'top';
       if (layers.pins) {
         board.pins.forEach((pin, i) => {
           if (!sideVisible(pin.side, layers)) return;
-          const { zBase } = getSideZ(pin.side, layers, proj3d.topFacesCamera);
+          const { zBase } = getSideZ(pin.side, layers, topFaces);
           const sp = proj3d.project3D(pin, zBase);
           const hitPx = Math.max(12, pin.radius * view.scale * sp.persp * 1.15);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
@@ -835,7 +852,7 @@ export function BoardCanvas(props: Props) {
       if (layers.nails) {
         board.nails.forEach((nail, i) => {
           if (!sideVisible(nail.side, layers)) return;
-          const { zBase } = getSideZ(nail.side, layers, proj3d.topFacesCamera);
+          const { zBase } = getSideZ(nail.side, layers, topFaces);
           const sp = proj3d.project3D(nail, zBase);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
           if (d < 12 && d < best3d.d) {
@@ -867,20 +884,21 @@ export function BoardCanvas(props: Props) {
       });
     }
     return best.index >= 0 ? best : null;
-  }, [board, tr, proj3d, renderMode, view.scale, layers]);
+  }, [board, tr, proj3d, preferredFrontSide, renderMode, view.scale, layers]);
 
   // Component polygon hit-testing in both 2D and 3D (checks both 3D roof and 3D base footprint!)
   const findPartAtScreen = useCallback((sx: number, sy: number): number => {
     if (!board || !tr) return -1;
-    if (renderMode === '3d' && proj3d) {
+    if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
       const screenPt: Point = { x: sx, y: sy };
+      const topFaces = proj3d.cosP >= 0 ? preferredFrontSide === 'top' : preferredFrontSide !== 'top';
       for (let i = 0; i < board.parts.length; i++) {
         const part = board.parts[i];
         if (part.isDummy || !part.box || !sideVisible(part.side, layers)) continue;
         const poly = partPoly(part);
         if (!poly) continue;
         const spec = classifyPartPackage(part);
-        const { zBase, zSign } = getSideZ(part.side, layers, proj3d.topFacesCamera);
+        const { zBase, zSign } = getSideZ(part.side, layers, topFaces);
         const zRoof = zBase + zSign * spec.heightMil;
         const roofQuad = poly.map((pt) => proj3d.project3D(pt, zRoof));
         const baseQuad = poly.map((pt) => proj3d.project3D(pt, zBase));
@@ -892,7 +910,7 @@ export function BoardCanvas(props: Props) {
     }
     const world = tr.toWorld(sx, sy);
     return board.parts.findIndex((part) => hitTestPart(part, world, layers));
-  }, [board, tr, proj3d, renderMode, layers]);
+  }, [board, tr, proj3d, preferredFrontSide, renderMode, layers]);
 
   // "E / Enter" selects whatever sits under the centre crosshair.
   const lastCenter = useRef(0);
