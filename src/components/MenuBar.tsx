@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Layers } from '../types';
+import type { Theme } from '../lib/theme';
 
 export interface MenuAction {
   /** Omitted on separators. */
@@ -136,7 +137,7 @@ export function buildMenus(o: {
   nets: number;
   tests: number;
   layers: Layers;
-  theme: 'classic' | 'dark';
+  theme: Theme;
   canInstall: boolean;
   recent: { label: string; open: () => void }[];
   openFile: () => void;
@@ -151,7 +152,7 @@ export function buildMenus(o: {
   flip: () => void;
   mirror: () => void;
   toggleLayer: (k: keyof Layers) => void;
-  setTheme: (t: 'classic' | 'dark') => void;
+  setTheme: (t: Theme) => void;
   openOptions: () => void;
   showKeys: () => void;
   showRe: () => void;
@@ -220,8 +221,9 @@ export function buildMenus(o: {
         { separator: true },
         {
           label: 'Theme', items: [
-            { label: 'Classic (original)', checked: o.theme === 'classic', onSelect: () => o.setTheme('classic') },
-            { label: 'Dark', checked: o.theme === 'dark', onSelect: () => o.setTheme('dark') },
+            { label: 'Studio Dark (default)', checked: o.theme === 'dark', onSelect: () => o.setTheme('dark') },
+            { label: 'Studio Light', checked: o.theme === 'light', onSelect: () => o.setTheme('light') },
+            { label: 'Classic (WinForms)', checked: o.theme === 'classic', onSelect: () => o.setTheme('classic') },
           ],
         },
         {

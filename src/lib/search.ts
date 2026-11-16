@@ -57,12 +57,12 @@ export function search(index: BoardIndex, query: string, board: Board, limit = 4
   index.partsByName.forEach((indices, name) => {
     const s = score(name, q);
     if (s) for (const i of indices) {
-      hits.push({ kind: 'part', label: board.parts[i].name, index: i, sub: `${board.parts[i].side.toUpperCase()} · ${Math.max(0, board.parts[i].pinEnd - board.parts[i].pinStart)} pins`, score: s });
+      hits.push({ kind: 'part', label: board.parts[i].name, index: i, sub: `${board.parts[i].side === 'bottom' ? 'Bot' : board.parts[i].side === 'both' ? 'Both' : 'Top'}, ${Math.max(0, board.parts[i].pinEnd - board.parts[i].pinStart)} pins`, score: s });
     }
   });
   index.nets.forEach((info, name) => {
     const s = score(name, q);
-    if (s) hits.push({ kind: 'net', label: info.name, index: 0, sub: `${info.pinIndices.length} pins · ${info.partIds.size} parts`, score: s - 5 });
+    if (s) hits.push({ kind: 'net', label: info.name, index: 0, sub: `${info.pinIndices.length} pins, ${info.partIds.size} parts`, score: s - 5 });
   });
   return hits.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)).slice(0, limit);
 }

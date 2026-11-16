@@ -1,46 +1,27 @@
 /** Theme selection.
  *
- *  `classic` reproduces the original BoardViewer: a light WinForms/Win32 app.
- *  Colours are sampled from the manual screenshots that ship inside the
- *  2.0.1.8 archive ("How to set up and use BoardViewer.pdf"):
- *    control face  #f0f0f0   window/canvas  #ffffff
- *    border        #898c95   text           #000000
- *  plus `Color.FromArgb(255, 244, 247, 252)` and the selection blue
- *  `FromArgb(255, 51, 153, 255)` recovered from the decompiled sources.
- *
- *  `dark` is the original dark theme this project started with.
+ *  - `dark`: Obsidian PCB Studio (default modern hardware repair UI).
+ *  - `light`: Studio Light (clean daylight CAD UI).
+ *  - `classic`: Legacy BoardViewer 2.0.1.9 WinForms chrome (optional).
  */
-export type Theme = 'classic' | 'dark';
+export type Theme = 'dark' | 'light' | 'classic';
 
-const KEY = 'bareboard.theme';
-
-/** The app shipped under a different name before it was called BareBoard. Anyone
- *  who set a preference then would silently lose it if we only read the new key. */
-const LEGACY_KEY = 'boardview.theme';
+const KEY = 'bareboard.theme.v2';
 
 export function readTheme(): Theme {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === 'dark' || v === 'classic') return v;
-    const old = localStorage.getItem(LEGACY_KEY);
-    if (old === 'dark' || old === 'classic') {
-      localStorage.setItem(KEY, old);
-      return old;
-    }
+    if (v === 'dark' || v === 'light' || v === 'classic') return v;
   } catch { /* private mode */ }
-  // The original look is the default: this is a reimplementation, not a redesign.
-  return 'classic';
+  return 'dark';
 }
 
 export function saveTheme(theme: Theme) {
   try { localStorage.setItem(KEY, theme); } catch { /* ignore */ }
 }
 
-/** Canvas colours. The board's own colours are not recoverable — the original
- *  builds them from float constants inside ConfuserEx's encrypted pool — so the
- *  light palette uses the industry convention (top red, bottom blue) which reads
- *  correctly on the original's near-white canvas. */
 export interface Palette {
+  isLightCanvas: boolean;
   bg: string;
   bgEdge: string;
   grid: string;
@@ -83,49 +64,89 @@ export interface Palette {
 
 export const PALETTES: Record<Theme, Palette> = {
   dark: {
-    bg: '#0d141d',
-    bgEdge: '#080b10',
-    grid: 'rgba(120,160,190,0.055)',
-    outlineStroke: 'rgba(94,234,212,0.6)',
-    outlineFill: 'rgba(94,234,212,0.032)',
-    top: '#5eead4',
-    bottom: '#f5b455',
-    both: '#7aa9ff',
-    pinGround: '#64748b',
-    pinNc: '#334e68',
-    pinA1: '#ff6b6b',
-    pinTestPad: '#eab308',
-    pinSelected: '#22c55e',
-    pinSameNet: '#facc15',
+    isLightCanvas: false,
+    bg: '#13161c',
+    bgEdge: '#0d1015',
+    grid: 'rgba(255,255,255,0.055)',
+    outlineStroke: 'rgba(138,180,248,0.68)',
+    outlineFill: 'rgba(76,141,246,0.03)',
+    top: '#60a5fa',
+    bottom: '#a78bfa',
+    both: '#38bdf8',
+    pinGround: '#6b7280',
+    pinNc: '#4b5563',
+    pinA1: '#f87171',
+    pinTestPad: '#fbbf24',
+    pinSelected: '#34d399',
+    pinSameNet: '#fde047',
     pinText: '#f8fafc',
     pinNetText: '#fde047',
-    partHull: 'rgba(125,211,252,0.55)',
-    nail: '#c58bff',
-    active: '#ffd479',
-    partStroke: 'rgba(94,234,212,0.58)',
-    partFill: 'rgba(94,234,212,0.065)',
-    partFillFocus: 'rgba(245,180,85,0.16)',
-    partStrokeBottom: 'rgba(245,180,85,0.75)',
-    partFillBottom: 'rgba(245,180,85,0.085)',
-    label: 'rgba(210,235,245,0.9)',
-    labelBottom: '#f7c676',
-    labelFocus: '#ffd479',
-    netIdle: 'rgba(94,234,212,0.05)',
-    netActive: 'rgba(255,212,121,0.72)',
+    partHull: 'rgba(96,165,250,0.58)',
+    nail: '#c084fc',
+    active: '#fbbc04',
+    partStroke: 'rgba(96,165,250,0.62)',
+    partFill: 'rgba(96,165,250,0.065)',
+    partFillFocus: 'rgba(251,188,4,0.18)',
+    partStrokeBottom: 'rgba(167,139,250,0.72)',
+    partFillBottom: 'rgba(167,139,250,0.085)',
+    label: 'rgba(241,245,249,0.92)',
+    labelBottom: '#c4b5fd',
+    labelFocus: '#fde047',
+    netIdle: 'rgba(148,163,184,0.06)',
+    netActive: 'rgba(251,188,4,0.88)',
     selectionRing: '#ffffff',
     crosshair: 'rgba(255,255,255,0.10)',
-    scaleText: 'rgba(210,230,240,0.7)',
-    tooltipBg: 'rgba(9,15,22,.96)',
-    tooltipBorder: '#2b4657',
-    tooltipText: '#a9c4d3',
-    tooltipTitle: '#5eead4',
-    emptyMark: 'rgba(94,234,212,.25)',
-    emptyDash: 'rgba(94,234,212,0.15)',
+    scaleText: 'rgba(226,232,240,0.82)',
+    tooltipBg: 'rgba(22,25,31,0.96)',
+    tooltipBorder: 'rgba(255,255,255,0.16)',
+    tooltipText: '#d1d5db',
+    tooltipTitle: '#8ab4f8',
+    emptyMark: 'rgba(138,180,248,0.28)',
+    emptyDash: 'rgba(138,180,248,0.16)',
+  },
+  light: {
+    isLightCanvas: true,
+    bg: '#f8f9fb',
+    bgEdge: '#eff2f6',
+    grid: 'rgba(17,24,39,0.055)',
+    outlineStroke: '#374151',
+    outlineFill: 'rgba(17,24,39,0.02)',
+    top: '#1a73e8',
+    bottom: '#5b45b0',
+    both: '#0284c7',
+    pinGround: '#4b5563',
+    pinNc: '#9ca3af',
+    pinA1: '#d93025',
+    pinTestPad: '#b06000',
+    pinSelected: '#188038',
+    pinSameNet: '#eab308',
+    pinText: '#111827',
+    pinNetText: '#9a3412',
+    partHull: 'rgba(26,115,232,0.65)',
+    nail: '#5b45b0',
+    active: '#d97706',
+    partStroke: 'rgba(26,115,232,0.68)',
+    partFill: 'rgba(26,115,232,0.055)',
+    partFillFocus: 'rgba(217,119,6,0.14)',
+    partStrokeBottom: 'rgba(91,69,176,0.72)',
+    partFillBottom: 'rgba(91,69,176,0.06)',
+    label: '#1f2937',
+    labelBottom: '#4c1d95',
+    labelFocus: '#b45309',
+    netIdle: 'rgba(17,24,39,0.05)',
+    netActive: 'rgba(217,119,6,0.88)',
+    selectionRing: '#111827',
+    crosshair: 'rgba(17,24,39,0.12)',
+    scaleText: '#4b5563',
+    tooltipBg: 'rgba(255,255,255,0.97)',
+    tooltipBorder: '#d0d5dd',
+    tooltipText: '#374151',
+    tooltipTitle: '#1558b0',
+    emptyMark: 'rgba(26,115,232,0.22)',
+    emptyDash: 'rgba(17,24,39,0.14)',
   },
   classic: {
-    // #f4f7fc is the background the decompiled sources return from an overridden
-    // BackColor, but the manual screenshots show a flat white drawing surface.
-    // The original has no vignette, so both stops are the same colour.
+    isLightCanvas: true,
     bg: '#ffffff',
     bgEdge: '#ffffff',
     grid: 'rgba(0,0,0,0.055)',

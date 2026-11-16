@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import type { Board, Layers, Part, Point, Selection, Side } from '../types';
 import type { BoardIndex } from '../lib/search';
 import type { Palette } from '../lib/theme';
 import { fitView, focusBounds, makeTransform, pointInPolygon, zoomAt, type View } from '../lib/geometry';
+import { MaterialIcon } from '@/components/MaterialIcon';
+import { Button } from '@/components/ui/button';
 import {
   classifyPartPackage,
   drawRealistic2DPart,
@@ -15,6 +17,12 @@ import {
   type Camera3D,
   type RenderMode,
 } from './realistic3d';
+
+export interface BoardCanvasHandle {
+  zoomBy: (factor: number) => void;
+  setDragMode3d: (mode: 'orbit' | 'pan') => void;
+  applyCam3D: (next: Camera3D | ((cur: Camera3D) => Camera3D)) => void;
+}
 
 function sideVisible(side: Side, layers: Layers): boolean {
   if (side === 'top') return layers.top;
@@ -70,10 +78,15 @@ interface Props {
   onFit: () => void;
   onRotate: (delta: number) => void;
   onFlip: () => void;
+  onOpenFile?: () => void;
+  onOpenFolder?: () => void;
+  onDemo?: () => void;
+  isClassicTheme?: boolean;
   fitToken: number;
   focusToken: number;
   centerSelectToken: number;
   palette: Palette;
+  onCamStateChange?: (cam: Camera3D, dragMode: 'orbit' | 'pan') => void;
 }
 
 function gridStep(scale: number): number {
@@ -81,9 +94,64 @@ function gridStep(scale: number): number {
   return steps.find((s) => s * scale >= 70) ?? 25000;
 }
 
-export function BoardCanvas(props: Props) {
+/** Shared high-contrast scale bar that avoids bottom mobile touch docks on narrow viewports. */
+function drawScaleBar(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  viewScale: number,
+  renderMode: RenderMode,
+  cam3d: Camera3D,
+  palette: Palette,
+  isClassicTheme?: boolean,
+) {
+  const isCompactStage = !isClassicTheme && w < 780;
+  const x = isCompactStage ? 14 : 18;
+  // In Studio theme, keep the bottom center clear for the floating CanvasDock by placing the scale bar top-left.
+  const barY = isClassicTheme ? h - 18 : (isCompactStage ? 74 : 36);
+  const labelY = isClassicTheme ? h - 28 : (isCompactStage ? 64 : 26);
+  const barMils = [2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000].find((v) => v * viewScale >= 60) ?? 10000;
+  const barPx = Math.min(isCompactStage ? 120 : 165, barMils * viewScale);
+  const isLight = palette.isLightCanvas;
+
+  ctx.save();
+  ctx.strokeStyle = isLight ? 'rgba(255,255,255,0.85)' : 'rgba(13,16,21,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, barY); ctx.lineTo(x + barPx, barY);
+  ctx.moveTo(x, barY - 4); ctx.lineTo(x, barY + 4);
+  ctx.moveTo(x + barPx, barY - 4); ctx.lineTo(x + barPx, barY + 4);
+  ctx.stroke();
+
+  ctx.strokeStyle = palette.scaleText;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.font = '600 10.5px "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.textAlign = 'left';
+  const label = renderMode === '3d'
+    ? `3D ${Math.round(cam3d.pitchDeg)}°/${Math.round(cam3d.yawDeg)}° | ${barMils} mil (${(barMils * 0.0254).toFixed(2)} mm)`
+    : `${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`;
+  if (isLight) {
+    ctx.strokeStyle = 'rgba(248,249,251,0.92)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, x, labelY);
+  } else {
+    ctx.strokeStyle = 'rgba(13,16,21,0.88)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, x, labelY);
+  }
+  ctx.fillStyle = palette.scaleText;
+  ctx.fillText(label, x, labelY);
+  ctx.restore();
+}
+
+export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCanvas(props, ref) {
   const { board, index, layers, view, flipX, flipY, rotation, renderMode, selection, highlightNet, focusParts,
-    onView, onSelect, onCursor, onFit, onRotate, onFlip, fitToken, focusToken, centerSelectToken, palette } = props;
+    onView, onSelect, onCursor, onFit, onRotate, onFlip, onOpenFile, onOpenFolder, onDemo, isClassicTheme,
+    fitToken, focusToken, centerSelectToken, palette, onCamStateChange } = props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -100,13 +168,32 @@ export function BoardCanvas(props: Props) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<Hover | null>(null);
   const [cam3d, setCam3d] = useState<Camera3D>({ pitchDeg: 48, yawDeg: -16 });
+  const cam3dRef = useRef(cam3d);
+  cam3dRef.current = cam3d;
   const [dragMode3d, setDragMode3d] = useState<'orbit' | 'pan'>('orbit');
-  const [preferredFrontSide, setPreferredFrontSide] = useState<'top' | 'bottom'>('top');
+
+  const bothSidesActive = layers.top && layers.bottom;
+  const singleSideMode = !bothSidesActive && (layers.top || layers.bottom);
+  const flipZ = bothSidesActive && flipY;
+
+  const clampPitch = useCallback(
+    (deg: number) => (singleSideMode ? Math.max(-82, Math.min(82, deg)) : Math.max(-175, Math.min(175, deg))),
+    [singleSideMode],
+  );
 
   useEffect(() => {
-    if (layers.top && !layers.bottom) setPreferredFrontSide('top');
-    else if (layers.bottom && !layers.top) setPreferredFrontSide('bottom');
-  }, [layers.top, layers.bottom]);
+    onCamStateChange?.(cam3d, dragMode3d);
+  }, [cam3d, dragMode3d, onCamStateChange]);
+
+  // If user switches to single-side mode while tilted underneath (>85°), smoothly bring camera back to front face
+  useEffect(() => {
+    if (!singleSideMode) return;
+    setCam3d((cur) => {
+      if (Math.abs(cur.pitchDeg) <= 82) return cur;
+      const mirrored = cur.pitchDeg > 0 ? 180 - cur.pitchDeg : -180 - cur.pitchDeg;
+      return { ...cur, pitchDeg: Math.max(-82, Math.min(82, mirrored)) };
+    });
+  }, [singleSideMode]);
 
   // --- touch state -----------------------------------------------------------
   const pointers = useRef<Map<number, Point>>(new Map());
@@ -137,20 +224,25 @@ export function BoardCanvas(props: Props) {
 
   const proj3d = useMemo(
     () => (board && size.w && size.h && (renderMode === '3d' || renderMode === 'realistic')
-      ? makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, effectiveCam)
+      ? makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, effectiveCam, flipZ)
       : null),
-    [board, size.w, size.h, view, flipX, flipY, rotation, renderMode, effectiveCam],
+    [board, size.w, size.h, view, flipX, flipY, rotation, renderMode, effectiveCam, flipZ],
   );
 
   // Pivots the 3D camera around whatever world point is currently at the center of the viewport!
-  const applyCam3D = useCallback((nextCam: Camera3D) => {
+  const applyCam3D = useCallback((nextOrFn: Camera3D | ((cur: Camera3D) => Camera3D)) => {
+    const cur = cam3dRef.current;
+    const rawNext = typeof nextOrFn === 'function' ? nextOrFn(cur) : nextOrFn;
+    const nextCam: Camera3D = { ...rawNext, pitchDeg: clampPitch(rawNext.pitchDeg) };
     setCam3d(nextCam);
-    if (!board || !size.w || !size.h) return;
-    const curProj = makeProjector3D(board, size.w, size.h, view, flipX, flipY, rotation, cam3d);
-    const pivot = curProj.unprojectToPlane(size.w / 2, size.h / 2, 0);
-    const { panX, panY } = orbitAroundPivot(pivot, view.scale, board, flipX, flipY, rotation, nextCam);
-    onView({ ...view, panX, panY });
-  }, [board, size.w, size.h, view, flipX, flipY, rotation, cam3d, onView]);
+    if (board && size.w && size.h) {
+      const curView = viewRef.current;
+      const curProj = makeProjector3D(board, size.w, size.h, curView, flipX, flipY, rotation, cur, flipZ);
+      const pivot = curProj.unprojectToPlane(size.w / 2, size.h / 2, 0);
+      const { panX, panY } = orbitAroundPivot(pivot, curView.scale, board, flipX, flipY, rotation, nextCam);
+      onView({ ...curView, panX, panY });
+    }
+  }, [board, size.w, size.h, flipX, flipY, flipZ, rotation, clampPitch, onView]);
 
   // Refs keep the fit / focus effects stable: they fire only when App increments their tokens.
   const onViewRef = useRef(onView); onViewRef.current = onView;
@@ -160,17 +252,29 @@ export function BoardCanvas(props: Props) {
   const selectionRef = useRef(selection); selectionRef.current = selection;
   const highlightNetRef = useRef(highlightNet); highlightNetRef.current = highlightNet;
   const indexRef = useRef(index); indexRef.current = index;
+  const renderModeRef = useRef(renderMode); renderModeRef.current = renderMode;
   const orientRef = useRef({ flipX, flipY, rotation }); orientRef.current = { flipX, flipY, rotation };
+  const lastFitToken = useRef(0);
+  const lastFocusToken = useRef(0);
 
   useEffect(() => {
-    if (fitToken > 0 && boardRef.current && sizeRef.current.w) {
-      onViewRef.current(fitView(boardRef.current, sizeRef.current.w, sizeRef.current.h));
+    if (fitToken === 0) {
+      lastFitToken.current = 0;
+      return;
     }
+    if (fitToken === lastFitToken.current || !boardRef.current || !sizeRef.current.w) return;
+    lastFitToken.current = fitToken;
+    onViewRef.current(fitView(boardRef.current, sizeRef.current.w, sizeRef.current.h));
   }, [fitToken]);
 
   // OpenBoardView CenterZoomSearchResults / CenterZoomNet equivalent:
   useEffect(() => {
-    if (focusToken <= 0 || !boardRef.current || !sizeRef.current.w) return;
+    if (focusToken <= 0) {
+      lastFocusToken.current = 0;
+      return;
+    }
+    if (focusToken === lastFocusToken.current || !boardRef.current || !sizeRef.current.w) return;
+    lastFocusToken.current = focusToken;
     const b = boardRef.current;
     const { w, h } = sizeRef.current;
     const sel = selectionRef.current;
@@ -202,10 +306,10 @@ export function BoardCanvas(props: Props) {
       }
     }
     if (box) {
-      const effRot = renderMode === '3d' ? rot + cam3d.yawDeg : rot;
+      const effRot = renderModeRef.current === '3d' ? rot + cam3dRef.current.yawDeg : rot;
       onViewRef.current(focusBounds(b, box, w, h, viewRef.current.scale, fx, fy, effRot));
     }
-  }, [focusToken, renderMode, cam3d.yawDeg]);
+  }, [focusToken]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -232,7 +336,7 @@ export function BoardCanvas(props: Props) {
       return;
     }
 
-    const isClassic = palette.bg === '#ffffff';
+    const isLight = palette.isLightCanvas;
     const isRealistic = renderMode === 'realistic';
 
     // --- 2D REALISTIC & 3D EXTRUDED BOARD RENDERER ----------------------------
@@ -240,28 +344,11 @@ export function BoardCanvas(props: Props) {
       renderBoard3D(
         ctx, board, index, layers, view, size, tr, proj3d,
         effectiveCam, flipX, flipY, rotation,
-        selection, highlightNet, focusParts, palette, isClassic,
+        selection, highlightNet, focusParts, palette, isLight,
         renderMode === '3d',
-        preferredFrontSide,
       );
 
-      // Scale bar at bottom-left
-      const barMils = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((v) => v * view.scale >= 70) ?? 5000;
-      const barPx = barMils * view.scale;
-      ctx.strokeStyle = palette.scaleText;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(20, h - 22); ctx.lineTo(20 + barPx, h - 22);
-      ctx.moveTo(20, h - 27); ctx.lineTo(20, h - 17);
-      ctx.moveTo(20 + barPx, h - 27); ctx.lineTo(20 + barPx, h - 17);
-      ctx.stroke();
-      ctx.fillStyle = palette.scaleText;
-      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
-      ctx.textAlign = 'left';
-      const label = renderMode === '3d'
-        ? `3D (TILT ${Math.round(cam3d.pitchDeg)}° · SPIN ${Math.round(cam3d.yawDeg)}°) · ${barMils} mil / ${(barMils * 0.0254).toFixed(2)} mm`
-        : `${barMils} mil  /  ${(barMils * 0.0254).toFixed(2)} mm`;
-      ctx.fillText(label, 20, h - 32);
+      drawScaleBar(ctx, w, h, view.scale, renderMode, cam3d, palette, isClassicTheme);
       return;
     }
 
@@ -320,7 +407,7 @@ export function BoardCanvas(props: Props) {
       }
       if (board.outline.length > 2) {
         ctx.fillStyle = isRealistic
-          ? (isClassic ? 'rgba(18, 82, 54, 0.9)' : 'rgba(13, 36, 40, 0.9)')
+          ? (isLight ? 'rgba(18, 82, 54, 0.9)' : 'rgba(13, 36, 40, 0.9)')
           : palette.outlineFill;
         ctx.fill('evenodd');
       }
@@ -708,9 +795,17 @@ export function BoardCanvas(props: Props) {
         const len12 = Math.hypot(dx12, dy12);
         const longSide = Math.max(len01, len12);
         const shortSide = Math.min(len01, len12);
-        let angle = len01 >= len12 ? Math.atan2(dy01, dx01) : Math.atan2(dy12, dx12);
-        if (angle > Math.PI / 2) angle -= Math.PI;
-        if (angle < -Math.PI / 2) angle += Math.PI;
+        const normAngle = (a: number) => {
+          let r = a;
+          while (r > Math.PI * 0.49) r -= Math.PI;
+          while (r <= -Math.PI * 0.51) r += Math.PI;
+          return r;
+        };
+        const ang01 = normAngle(Math.atan2(dy01, dx01));
+        const ang12 = normAngle(Math.atan2(dy12, dx12));
+        const angle = longSide <= shortSide * 1.18
+          ? (Math.abs(ang01) <= Math.abs(ang12) ? ang01 : ang12)
+          : (len01 >= len12 ? ang01 : ang12);
 
         const spec = isRealistic ? classifyPartPackage(part) : null;
         // On dense boards in Realistic mode, keep small passives' ceramic/resistive bodies clean until zoomed in (>= 26px)
@@ -808,20 +903,8 @@ export function BoardCanvas(props: Props) {
     ctx.moveTo(w / 2, h / 2 - 8); ctx.lineTo(w / 2, h / 2 + 8);
     ctx.stroke();
 
-    const barMils = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000].find((v) => v * view.scale >= 70) ?? 5000;
-    const barPx = barMils * view.scale;
-    ctx.strokeStyle = palette.scaleText;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(20, h - 22); ctx.lineTo(20 + barPx, h - 22);
-    ctx.moveTo(20, h - 27); ctx.lineTo(20, h - 17);
-    ctx.moveTo(20 + barPx, h - 27); ctx.lineTo(20 + barPx, h - 17);
-    ctx.stroke();
-    ctx.fillStyle = palette.scaleText;
-    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${barMils} mil  /  ${(barMils * 0.0254).toFixed(2)} mm`, 20, h - 32);
-  }, [board, index, layers, view, size, tr, proj3d, effectiveCam, preferredFrontSide, cam3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette]);
+    drawScaleBar(ctx, w, h, view.scale, renderMode, cam3d, palette, isClassicTheme);
+  }, [board, index, layers, view, size, tr, proj3d, effectiveCam, cam3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette, isClassicTheme]);
 
   const localPoint = (e: ReactPointerEvent | ReactWheelEvent | ReactMouseEvent): Point => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -834,11 +917,10 @@ export function BoardCanvas(props: Props) {
 
     if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
       const best3d = { kind: 'pin' as 'pin' | 'nail', index: -1, d: Infinity };
-      const topFaces = proj3d.cosP >= 0 ? preferredFrontSide === 'top' : preferredFrontSide !== 'top';
       if (layers.pins) {
         board.pins.forEach((pin, i) => {
           if (!sideVisible(pin.side, layers)) return;
-          const { zBase } = getSideZ(pin.side, layers, topFaces);
+          const { zBase } = getSideZ(pin.side, layers);
           const sp = proj3d.project3D(pin, zBase);
           const hitPx = Math.max(12, pin.radius * view.scale * sp.persp * 1.15);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
@@ -852,7 +934,7 @@ export function BoardCanvas(props: Props) {
       if (layers.nails) {
         board.nails.forEach((nail, i) => {
           if (!sideVisible(nail.side, layers)) return;
-          const { zBase } = getSideZ(nail.side, layers, topFaces);
+          const { zBase } = getSideZ(nail.side, layers);
           const sp = proj3d.project3D(nail, zBase);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
           if (d < 12 && d < best3d.d) {
@@ -884,21 +966,20 @@ export function BoardCanvas(props: Props) {
       });
     }
     return best.index >= 0 ? best : null;
-  }, [board, tr, proj3d, preferredFrontSide, renderMode, view.scale, layers]);
+  }, [board, tr, proj3d, renderMode, view.scale, layers]);
 
   // Component polygon hit-testing in both 2D and 3D (checks both 3D roof and 3D base footprint!)
   const findPartAtScreen = useCallback((sx: number, sy: number): number => {
     if (!board || !tr) return -1;
     if ((renderMode === '3d' || renderMode === 'realistic') && proj3d) {
       const screenPt: Point = { x: sx, y: sy };
-      const topFaces = proj3d.cosP >= 0 ? preferredFrontSide === 'top' : preferredFrontSide !== 'top';
       for (let i = 0; i < board.parts.length; i++) {
         const part = board.parts[i];
         if (part.isDummy || !part.box || !sideVisible(part.side, layers)) continue;
         const poly = partPoly(part);
         if (!poly) continue;
         const spec = classifyPartPackage(part);
-        const { zBase, zSign } = getSideZ(part.side, layers, topFaces);
+        const { zBase, zSign } = getSideZ(part.side, layers);
         const zRoof = zBase + zSign * spec.heightMil;
         const roofQuad = poly.map((pt) => proj3d.project3D(pt, zRoof));
         const baseQuad = poly.map((pt) => proj3d.project3D(pt, zBase));
@@ -910,7 +991,7 @@ export function BoardCanvas(props: Props) {
     }
     const world = tr.toWorld(sx, sy);
     return board.parts.findIndex((part) => hitTestPart(part, world, layers));
-  }, [board, tr, proj3d, preferredFrontSide, renderMode, layers]);
+  }, [board, tr, proj3d, renderMode, layers]);
 
   // "E / Enter" selects whatever sits under the centre crosshair.
   const lastCenter = useRef(0);
@@ -933,7 +1014,7 @@ export function BoardCanvas(props: Props) {
     const p = localPoint(e);
     const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
     if (renderMode === '3d') {
-      onView(zoomAt3D(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+      onView(zoomAt3D(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d, flipZ));
     } else {
       onView(zoomAt(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
     }
@@ -971,7 +1052,7 @@ export function BoardCanvas(props: Props) {
     if (e.button === 2 && board && (renderMode !== '3d' || e.altKey)) {
       quick.current = { view };
       if (renderMode === '3d') {
-        onView(zoomAt3D(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+        onView(zoomAt3D(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d, flipZ));
       } else {
         onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
       }
@@ -986,7 +1067,7 @@ export function BoardCanvas(props: Props) {
           quick.current = { view };
           setMagnifying(true);
           if (renderMode === '3d') {
-            onView(zoomAt3D(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+            onView(zoomAt3D(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d, flipZ));
           } else {
             onView(zoomAt(view, 3, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
           }
@@ -1024,9 +1105,12 @@ export function BoardCanvas(props: Props) {
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const base = pinch.current;
       const z = renderMode === '3d'
-        ? zoomAt3D(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, rotation, cam3d)
+        ? zoomAt3D(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, rotation, cam3d, flipZ)
         : zoomAt(base.view, dist / base.dist, base.mx, base.my, size.w, size.h, board, flipX, flipY, rotation);
-      const pitchScaleY = renderMode === '3d' ? Math.max(0.35, Math.cos((cam3d.pitchDeg * Math.PI) / 180)) : 1;
+      const cosP = Math.cos((cam3d.pitchDeg * Math.PI) / 180);
+      const pitchScaleY = renderMode === '3d'
+        ? (cosP >= 0 ? Math.max(0.35, cosP) : Math.min(-0.35, cosP))
+        : 1;
       onView({ ...z, panX: z.panX + (mx - base.mx), panY: z.panY + (my - base.my) / pitchScaleY });
       onCursor(proj3d ? proj3d.unprojectToPlane(mx, my, 0) : (tr?.toWorld(mx, my) ?? null));
       return;
@@ -1040,26 +1124,28 @@ export function BoardCanvas(props: Props) {
       if (drag.current.orbiting && board) {
         const nextCam: Camera3D = {
           yawDeg: ((drag.current.yawDeg + dx * 0.45 + 540) % 360) - 180,
-          pitchDeg: Math.max(-175, Math.min(175, drag.current.pitchDeg - dy * 0.4)),
+          pitchDeg: clampPitch(drag.current.pitchDeg - dy * 0.4),
         };
         setCam3d(nextCam);
         // Pivot around the screen center point so the inspected component never flies off screen!
+        const curView = viewRef.current;
         const { panX, panY } = orbitAroundPivot(
           drag.current.pivotWorld,
-          view.scale,
+          curView.scale,
           board,
           flipX,
           flipY,
           rotation,
           nextCam,
         );
-        onView({ ...view, panX, panY });
+        onView({ ...curView, panX, panY });
       } else {
+        const curView = viewRef.current;
         const cosP = Math.cos((cam3d.pitchDeg * Math.PI) / 180);
         const pitchScaleY = renderMode === '3d'
           ? (cosP >= 0 ? Math.max(0.35, cosP) : Math.min(-0.35, cosP))
           : 1;
-        onView({ ...view, panX: drag.current.panX + dx, panY: drag.current.panY + dy / pitchScaleY });
+        onView({ ...curView, panX: drag.current.panX + dx, panY: drag.current.panY + dy / pitchScaleY });
       }
       onCursor(proj3d ? proj3d.unprojectToPlane(p.x, p.y, 0) : (tr?.toWorld(p.x, p.y) ?? null));
       return;
@@ -1074,25 +1160,25 @@ export function BoardCanvas(props: Props) {
         const partObj = pin.part > 0 ? board.parts[pin.part - 1] : undefined;
         const partName = partObj ? (partObj.isDummy ? 'Test Pad' : partObj.name) : '—';
         const pinTitle = pin.name && pin.number && pin.name !== pin.number
-          ? `${partName} · Pin ${pin.number} (${pin.name})`
-          : `${partName} · Pin ${pin.name || pin.number || hit.index + 1}`;
+          ? `${partName} — Pin ${pin.number} (${pin.name})`
+          : `${partName} — Pin ${pin.name || pin.number || hit.index + 1}`;
         setHover({
           sx: p.x, sy: p.y, title: pinTitle,
           lines: [
-            `NET   ${pin.net}`,
-            `PART  ${partName}`,
-            `SIDE  ${pin.side.toUpperCase()}`,
-            `X/Y   ${Math.round(pin.x)} / ${Math.round(pin.y)} mil`,
+            `Net: ${pin.net}`,
+            `Part: ${partName}`,
+            `Side: ${pin.side === 'bottom' ? 'Bottom' : pin.side === 'both' ? 'Both' : 'Top'}`,
+            `Coords: ${Math.round(pin.x)}, ${Math.round(pin.y)} mil`,
           ],
         });
       } else {
         const nail = board.nails[hit.index];
         setHover({
-          sx: p.x, sy: p.y, title: `TEST POINT ${nail.probe || hit.index + 1}`,
+          sx: p.x, sy: p.y, title: `Test point ${nail.probe || hit.index + 1}`,
           lines: [
-            `NET   ${nail.net}`,
-            `SIDE  ${nail.side.toUpperCase()}`,
-            `X/Y   ${Math.round(nail.x)} / ${Math.round(nail.y)} mil`,
+            `Net: ${nail.net}`,
+            `Side: ${nail.side === 'bottom' ? 'Bottom' : nail.side === 'both' ? 'Both' : 'Top'}`,
+            `Coords: ${Math.round(nail.x)}, ${Math.round(nail.y)} mil`,
           ],
         });
       }
@@ -1104,10 +1190,10 @@ export function BoardCanvas(props: Props) {
         const part = board.parts[partIdx];
         const spec = classifyPartPackage(part);
         setHover({
-          sx: p.x, sy: p.y, title: `PART ${part.name} (${spec.kind.toUpperCase()})`,
+          sx: p.x, sy: p.y, title: `${part.name} (${spec.kind.toUpperCase()})`,
           lines: [
-            `PINS  ${Math.max(0, part.pinEnd - part.pinStart)}`,
-            `SIDE  ${part.side.toUpperCase()} · ${part.type.toUpperCase()}`,
+            `Pins: ${Math.max(0, part.pinEnd - part.pinStart)}`,
+            `Side: ${part.side === 'bottom' ? 'Bottom' : part.side === 'both' ? 'Both' : 'Top'} (${part.type.toUpperCase()})`,
           ],
         });
         return;
@@ -1156,14 +1242,20 @@ export function BoardCanvas(props: Props) {
     if (pointers.current.size === 0) gestureHadPinch.current = false;
   };
 
-  const zoom = (factor: number) => {
+  const zoom = useCallback((factor: number) => {
     if (!board) return;
     if (renderMode === '3d') {
-      onView(zoomAt3D(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, rotation, cam3d));
+      onView(zoomAt3D(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, rotation, cam3d, flipZ));
     } else {
       onView(zoomAt(view, factor, size.w / 2, size.h / 2, size.w, size.h, board, flipX, flipY, rotation));
     }
-  };
+  }, [board, renderMode, onView, view, size.w, size.h, flipX, flipY, flipZ, rotation, cam3d]);
+
+  useImperativeHandle(ref, () => ({
+    zoomBy: zoom,
+    setDragMode3d,
+    applyCam3D,
+  }), [zoom, applyCam3D]);
 
   const realPartCount = useMemo(
     () => (board ? board.parts.filter((p) => !p.isDummy).length : 0),
@@ -1195,71 +1287,32 @@ export function BoardCanvas(props: Props) {
         onContextMenu={(e: ReactMouseEvent) => e.preventDefault()}
         onDoubleClick={() => { if (lastPointerType.current !== 'touch') onFit(); }}
       />
-      {renderMode === '3d' && board && (
-        <div className="cam3d-bar" role="group" aria-label="3D camera controls">
-          <button
-            type="button"
-            className={dragMode3d === 'orbit' ? 'on' : ''}
-            onClick={() => setDragMode3d('orbit')}
-            title="Left-drag orbits around screen center; Right-drag pans"
-          >
-            Orbit
-          </button>
-          <button
-            type="button"
-            className={dragMode3d === 'pan' ? 'on' : ''}
-            onClick={() => setDragMode3d('pan')}
-            title="Left-drag pans; Right-drag or Shift+drag orbits"
-          >
-            Pan
-          </button>
-          <span className="cam3d-sep" />
-          <button
-            type="button"
-            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.min(175, cam3d.pitchDeg + 15) })}
-            title="Tilt 3D camera steeper"
-          >
-            Tilt +
-          </button>
-          <button
-            type="button"
-            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.max(-175, cam3d.pitchDeg - 15) })}
-            title="Flatten / invert 3D camera tilt"
-          >
-            Tilt −
-          </button>
-          <button
-            type="button"
-            onClick={() => applyCam3D({ ...cam3d, yawDeg: ((cam3d.yawDeg - 25 + 540) % 360) - 180 })}
-            title="Spin 3D turntable counter-clockwise around screen center"
-          >
-            ⟲
-          </button>
-          <button
-            type="button"
-            onClick={() => applyCam3D({ ...cam3d, yawDeg: ((cam3d.yawDeg + 25 + 540) % 360) - 180 })}
-            title="Spin 3D turntable clockwise around screen center"
-          >
-            ⟳
-          </button>
-          <span className="cam3d-sep" />
-          <button
-            type="button"
-            onClick={() => applyCam3D({ pitchDeg: 0, yawDeg: 0 })}
-            title="Top-down 0° view"
-          >
-            Top 0°
-          </button>
-          <button
-            type="button"
-            onClick={() => applyCam3D({ pitchDeg: 48, yawDeg: -16 })}
-            title="Reset 3D isometric angle"
-          >
-            Iso 3D
-          </button>
-        </div>
+      {isClassicTheme && (
+        <>
+          {renderMode === '3d' && board && (
+            <div className="cam3d-bar" role="group" aria-label="3D camera controls">
+              <button type="button" className={dragMode3d === 'orbit' ? 'on' : ''} onClick={() => setDragMode3d('orbit')}>Orbit</button>
+              <button type="button" className={dragMode3d === 'pan' ? 'on' : ''} onClick={() => setDragMode3d('pan')}>Pan</button>
+              <span className="cam3d-sep" />
+              <button type="button" onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.min(175, cam3d.pitchDeg + 15) })}>Tilt +</button>
+              <button type="button" onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.max(-175, cam3d.pitchDeg - 15) })}>Tilt −</button>
+              <button type="button" onClick={() => applyCam3D({ ...cam3d, yawDeg: ((cam3d.yawDeg - 25 + 540) % 360) - 180 })}>⟲</button>
+              <button type="button" onClick={() => applyCam3D({ ...cam3d, yawDeg: ((cam3d.yawDeg + 25 + 540) % 360) - 180 })}>⟳</button>
+              <span className="cam3d-sep" />
+              <button type="button" onClick={() => applyCam3D({ pitchDeg: 0, yawDeg: 0 })}>Top 0°</button>
+              <button type="button" onClick={() => applyCam3D({ pitchDeg: 48, yawDeg: -16 })}>Iso 3D</button>
+            </div>
+          )}
+          <div className="canvas-controls">
+            <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoom(1.25)}>＋</button>
+            <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoom(0.8)}>－</button>
+            <button type="button" title="Zoom to fit (F / double-click)" aria-label="Zoom to fit" onClick={onFit}>⤢</button>
+            <button type="button" title="Rotate 90° (R)" aria-label="Rotate 90 degrees" onClick={() => onRotate(90)}>⟳</button>
+            <button type="button" title="Flip board (Space)" aria-label="Flip board" onClick={onFlip}>⇋</button>
+          </div>
+        </>
       )}
-      {magnifying && <div className="mag-badge" aria-hidden="true">MAGNIFIER 3× · RELEASE TO RETURN</div>}
+      {magnifying && <div className="mag-badge" aria-hidden="true">Magnifier 3×</div>}
       {hover && (
         <div className="canvas-tooltip" style={{ left: Math.min(hover.sx + 16, size.w - 220), top: Math.min(hover.sy + 16, size.h - 110) }}>
           <div className="tip-title">{hover.title}</div>
@@ -1267,19 +1320,31 @@ export function BoardCanvas(props: Props) {
         </div>
       )}
       {!board && (
-        <div className="canvas-empty">
-          <div className="empty-mark">＋</div>
-          <div className="empty-title">No board loaded</div>
-          <div className="empty-sub">Drop a boardview file here, or open the bundled demo.</div>
+        <div className="canvas-empty pointer-events-none absolute inset-0 z-4 flex items-center justify-center p-4">
+          <div className="empty-card pointer-events-auto max-w-[420px] rounded-xl border border-border-strong bg-glass p-6 text-center shadow-2xl backdrop-blur-md">
+            <div className="empty-mark mb-2 flex justify-center text-primary">
+              <MaterialIcon name="developer_board" size={34} />
+            </div>
+            <div className="empty-title text-sm font-semibold text-foreground">Drop any boardview file here</div>
+            <div className="empty-sub mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              Supports <code className="font-medium text-primary">.brd</code>,{' '}
+              <code className="font-medium text-primary">.bdv</code>,{' '}
+              <code className="font-medium text-primary">.bvr</code>,{' '}
+              <code className="font-medium text-primary">.cad</code>,{' '}
+              <code className="font-medium text-primary">.cst</code>,{' '}
+              <code className="font-medium text-primary">.asc</code> &amp;{' '}
+              <code className="font-medium text-primary">.zip</code> rendered locally in 2D Real &amp; 3D.
+            </div>
+            {(onOpenFile || onOpenFolder || onDemo) && (
+              <div className="empty-actions mt-4 flex flex-wrap items-center justify-center gap-2">
+                {onOpenFile && <Button variant="primary" size="default" className="btn primary" onClick={onOpenFile}>Open File…</Button>}
+                {onOpenFolder && <Button variant="default" size="default" className="btn" onClick={onOpenFolder}>Open ASC Folder</Button>}
+                {onDemo && <Button variant="default" size="default" className="btn" onClick={onDemo}>Load Demo Board</Button>}
+              </div>
+            )}
+          </div>
         </div>
       )}
-      <div className="canvas-controls">
-        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoom(1.25)}>＋</button>
-        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoom(0.8)}>－</button>
-        <button type="button" title="Zoom to fit (F / double-click)" aria-label="Zoom to fit" onClick={onFit}>⤢</button>
-        <button type="button" title="Rotate 90° (R)" aria-label="Rotate 90 degrees" onClick={() => onRotate(90)}>⟳</button>
-        <button type="button" title="Flip board (Space)" aria-label="Flip board" onClick={onFlip}>⇋</button>
-      </div>
     </div>
   );
-}
+});

@@ -648,13 +648,11 @@ export const BOARD_HALF_THICKNESS_MIL = 36;
 export function getSideZ(
   side: Side,
   layers: Layers,
-  topFacesCamera: boolean,
 ): { zBase: number; zSign: number } {
   const singleSideMode = (layers.top && !layers.bottom) || (layers.bottom && !layers.top);
   if (singleSideMode) {
-    return topFacesCamera
-      ? { zBase: BOARD_HALF_THICKNESS_MIL, zSign: 1 }
-      : { zBase: -BOARD_HALF_THICKNESS_MIL, zSign: -1 };
+    // In single-side mode, whichever side is selected faces the camera (+Z) like lying flat on a bench
+    return { zBase: BOARD_HALF_THICKNESS_MIL, zSign: 1 };
   }
   if (side === 'bottom') {
     return { zBase: -BOARD_HALF_THICKNESS_MIL, zSign: -1 };
@@ -673,6 +671,7 @@ export function makeProjector3D(
   flipY: boolean,
   rotation: number,
   cam: Camera3D,
+  flipZ = false,
 ): Projector3D {
   const center: Point = {
     x: (board.bounds.minX + board.bounds.maxX) / 2,
@@ -693,10 +692,8 @@ export function makeProjector3D(
     let dy = p.y - center.y;
     let dz = z * zRelief;
     if (flipX) dx = -dx;
-    if (flipY) {
-      dy = -dy;
-      dz = -dz;
-    }
+    if (flipY) dy = -dy;
+    if (flipZ) dz = -dz;
 
     const rx = (dx * cosR - dy * sinR) * view.scale + view.panX;
     const ry = (dx * sinR + dy * cosR) * view.scale + view.panY;
@@ -718,13 +715,13 @@ export function makeProjector3D(
 
   const unprojectToPlane = (sx: number, sy: number, zPlane = 0): Point => {
     let dz = zPlane * zRelief;
-    if (flipY) dz = -dz;
+    if (flipZ) dz = -dz;
     const rz = dz * view.scale;
 
     const u = sx - width / 2;
     const v = sy - height / 2;
 
-    const safeCosP = Math.abs(cosP) < 0.15 ? (cosP >= 0 ? 0.15 : -0.15) : cosP;
+    const safeCosP = Math.abs(cosP) < 0.25 ? (cosP >= 0 ? 0.25 : -0.25) : cosP;
     let persp = 1;
     let ry = (v + rz * sinP) / safeCosP;
     for (let iter = 0; iter < 2; iter++) {
@@ -773,9 +770,10 @@ export function zoomAt3D(
   flipY: boolean,
   rotation: number,
   cam: Camera3D,
+  flipZ = false,
 ): View {
   const scale = Math.min(Math.max(view.scale * factor, 0.0005), 40);
-  const beforeProj = makeProjector3D(board, width, height, view, flipX, flipY, rotation, cam);
+  const beforeProj = makeProjector3D(board, width, height, view, flipX, flipY, rotation, cam, flipZ);
   const worldPt = beforeProj.unprojectToPlane(sx, sy, 0);
 
   let dx = worldPt.x - beforeProj.center.x;
@@ -859,7 +857,7 @@ function traceMultiContour3D(
   }
 }
 
-/** Helper to draw an extruded 3D prism between `z0` and `z1` given a 4-point world polygon `poly`. */
+/** Helper to draw an extruded 3D prism between `z0` and `z1` with front-facing wall culling & true depth order. */
 function drawExtrudedPrism3D(
   ctx: CanvasRenderingContext2D,
   poly: Point[],
@@ -869,47 +867,70 @@ function drawExtrudedPrism3D(
   topFill: string,
   sideFill: string,
   strokeCol: string,
-  alpha = 0.92,
+  alpha = 0.98,
   endCapFill?: string,
 ): { basePts: ProjectedPoint[]; roofPts: ProjectedPoint[] } {
   const basePts = poly.map((pt) => P(pt, z0));
   const roofPts = poly.map((pt) => P(pt, z1));
 
-  const walls = [0, 1, 2, 3].map((k) => {
-    const next = (k + 1) % 4;
-    const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[next].depth + roofPts[k].depth) * 0.25;
-    return { k, next, wallDepth };
-  }).sort((a, b) => b.wallDepth - a.wallDepth);
+  const baseDepth = (basePts[0].depth + basePts[1].depth + basePts[2].depth + basePts[3].depth) * 0.25;
+  const roofDepth = (roofPts[0].depth + roofPts[1].depth + roofPts[2].depth + roofPts[3].depth) * 0.25;
+  const centerDepth = (baseDepth + roofDepth) * 0.5;
+  const roofIsFront = roofDepth <= baseDepth;
 
-  for (const { k, next } of walls) {
+  const drawFace = (pts: ProjectedPoint[], fill: string, stroke: string, lineWidth = 1.1) => {
     ctx.beginPath();
-    ctx.moveTo(basePts[k].x, basePts[k].y);
-    ctx.lineTo(basePts[next].x, basePts[next].y);
-    ctx.lineTo(roofPts[next].x, roofPts[next].y);
-    ctx.lineTo(roofPts[k].x, roofPts[k].y);
+    pts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
     ctx.save();
     ctx.globalAlpha *= alpha;
-    const isEndWall = Boolean(endCapFill) && (k === 0 || k === 2);
-    ctx.fillStyle = isEndWall ? endCapFill! : sideFill;
+    ctx.fillStyle = fill;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-    ctx.lineWidth = 0.85;
-    ctx.stroke();
     ctx.restore();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  };
+
+  if (!roofIsFront) {
+    drawFace(roofPts, topFill, strokeCol);
   }
 
-  ctx.beginPath();
-  roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-  ctx.closePath();
-  ctx.save();
-  ctx.globalAlpha *= alpha;
-  ctx.fillStyle = topFill;
-  ctx.fill();
-  ctx.strokeStyle = strokeCol;
-  ctx.lineWidth = 1.15;
-  ctx.stroke();
-  ctx.restore();
+  const extrudePx = Math.hypot(roofPts[0].x - basePts[0].x, roofPts[0].y - basePts[0].y);
+  if (extrudePx >= 0.6) {
+    const walls = [0, 1, 2, 3]
+      .map((k) => {
+        const next = (k + 1) % 4;
+        const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[next].depth + roofPts[k].depth) * 0.25;
+        return { k, next, wallDepth };
+      })
+      .filter((w) => w.wallDepth <= centerDepth + 0.05)
+      .sort((a, b) => b.wallDepth - a.wallDepth);
+
+    for (const { k, next } of walls) {
+      ctx.beginPath();
+      ctx.moveTo(basePts[k].x, basePts[k].y);
+      ctx.lineTo(basePts[next].x, basePts[next].y);
+      ctx.lineTo(roofPts[next].x, roofPts[next].y);
+      ctx.lineTo(roofPts[k].x, roofPts[k].y);
+      ctx.closePath();
+      ctx.save();
+      ctx.globalAlpha *= alpha;
+      const isEndWall = Boolean(endCapFill) && (k === 0 || k === 2);
+      ctx.fillStyle = isEndWall ? endCapFill! : sideFill;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  if (roofIsFront) {
+    drawFace(roofPts, topFill, strokeCol);
+  } else {
+    drawFace(basePts, sideFill, 'rgba(0, 0, 0, 0.35)', 0.9);
+  }
 
   return { basePts, roofPts };
 }
@@ -1006,6 +1027,7 @@ function draw3DGizmo(
   cam: Camera3D,
   flipX: boolean,
   flipY: boolean,
+  flipZ: boolean,
   palette: Palette,
 ): void {
   const gx = w - 48;
@@ -1020,7 +1042,7 @@ function draw3DGizmo(
   const projAxis = (ax: number, ay: number, az: number) => {
     const dx = flipX ? -ax : ax;
     const dy = flipY ? -ay : ay;
-    const dz = flipY ? -az : az;
+    const dz = flipZ ? -az : az;
     const rx = dx * cosR - dy * sinR;
     const ry = dx * sinR + dy * cosR;
     return {
@@ -1032,7 +1054,7 @@ function draw3DGizmo(
   ctx.save();
   ctx.beginPath();
   ctx.arc(gx, gy, 30, 0, Math.PI * 2);
-  ctx.fillStyle = palette.bg === '#ffffff' ? 'rgba(240, 244, 248, 0.9)' : 'rgba(10, 16, 24, 0.86)';
+  ctx.fillStyle = palette.isLightCanvas ? 'rgba(240, 244, 248, 0.9)' : 'rgba(10, 16, 24, 0.86)';
   ctx.fill();
   ctx.strokeStyle = palette.outlineStroke;
   ctx.lineWidth = 1;
@@ -1081,14 +1103,13 @@ export function renderBoard3D(
   palette: Palette,
   isClassic: boolean,
   showGizmo = true,
-  preferredFrontSide: 'top' | 'bottom' = 'top',
 ): void {
   const { w, h } = size;
   const P = proj.project3D;
   const zTopSurface = BOARD_HALF_THICKNESS_MIL;
   const zBotSurface = -BOARD_HALF_THICKNESS_MIL;
-  // If tilted past 90° in 3D, flip which side faces the camera; otherwise use preferredFrontSide
-  const topFacesCamera = proj.cosP >= 0 ? preferredFrontSide === 'top' : preferredFrontSide !== 'top';
+  const bothSidesActive = layers.top && layers.bottom;
+  const topFacesCamera = bothSidesActive ? proj.topFacesCamera : true;
 
   const activeNetInfo = highlightNet && index ? index.nets.get(highlightNet) : undefined;
   const hasFilter = Boolean(selection || (highlightNet && highlightNet !== 'UNCONNECTED') || focusParts.size > 0);
@@ -1121,12 +1142,7 @@ export function renderBoard3D(
     const sideEnabled = side === 'top' ? layers.top : layers.bottom;
     if (!sideEnabled) return;
 
-    const zBase = isFarSideUnderBoard
-      ? ( proj.cosP >= 0 ? zBotSurface : zTopSurface )
-      : ( proj.cosP >= 0 ? zTopSurface : zBotSurface );
-    const zSign = isFarSideUnderBoard
-      ? ( proj.cosP >= 0 ? -1 : 1 )
-      : ( proj.cosP >= 0 ? 1 : -1 );
+    const { zBase, zSign } = getSideZ(side, layers);
 
     // 2a. Solder pads / BGA balls on the PCB surface (z = zBase)
     const drawPinsOnSurface = (overlayPass: boolean) => {
@@ -1231,10 +1247,14 @@ export function renderBoard3D(
           ctx.restore();
         };
 
-        drawXrayRing(buckets.nc, palette.pinNc, 0.45);
-        drawXrayRing(buckets.gnd, '#94a3b8', 0.62);
-        drawXrayRing(buckets.normal, side === 'top' ? '#fde047' : '#7dd3fc', 0.72);
-        drawXrayRing(buckets.pin1, palette.pinA1, 0.92);
+        if (!showGizmo || isFarSideUnderBoard) {
+          drawXrayRing(buckets.nc, palette.pinNc, 0.45);
+          drawXrayRing(buckets.gnd, '#94a3b8', 0.62);
+          drawXrayRing(buckets.normal, side === 'top' ? '#fde047' : '#7dd3fc', 0.72);
+          drawXrayRing(buckets.pin1, palette.pinA1, 0.92);
+        } else {
+          drawXrayRing(buckets.pin1, palette.pinA1, 0.78);
+        }
 
         if (highlighted.length) {
           ctx.save();
@@ -1359,7 +1379,15 @@ export function renderBoard3D(
       ctx.save();
       if (hasFilter && !highlighted) ctx.globalAlpha = 0.38;
 
-      const xrayAlpha = selected || focused ? 0.94 : spec.kind === 'bga' ? 0.74 : 0.88;
+      const xrayAlpha = isFarSideUnderBoard
+        ? 0.54
+        : selected || focused
+          ? 0.98
+          : spec.kind === 'bga'
+            ? 0.78
+            : showGizmo
+              ? 0.97
+              : 0.9;
       const zRoof = zBase + zSign * spec.heightMil;
 
       // Helper to render the 3D Silkscreen Label on `labelQuad`
@@ -1375,9 +1403,18 @@ export function renderBoard3D(
         const dx12 = labelQuad[2].x - labelQuad[1].x, dy12 = labelQuad[2].y - labelQuad[1].y;
         const len01 = Math.hypot(dx01, dy01), len12 = Math.hypot(dx12, dy12);
         const longSide = Math.max(len01, len12), shortSide = Math.min(len01, len12);
-        let angle = len01 >= len12 ? Math.atan2(dy01, dx01) : Math.atan2(dy12, dx12);
-        if (angle > Math.PI / 2) angle -= Math.PI;
-        if (angle < -Math.PI / 2) angle += Math.PI;
+        const normAngle = (a: number) => {
+          let r = a;
+          while (r > Math.PI * 0.49) r -= Math.PI;
+          while (r <= -Math.PI * 0.51) r += Math.PI;
+          return r;
+        };
+        const ang01 = normAngle(Math.atan2(dy01, dx01));
+        const ang12 = normAngle(Math.atan2(dy12, dx12));
+        // For near-square ICs/BGAs, prefer the edge closest to horizontal so chip labels stay upright!
+        const angle = longSide <= shortSide * 1.18
+          ? (Math.abs(ang01) <= Math.abs(ang12) ? ang01 : ang12)
+          : (len01 >= len12 ? ang01 : ang12);
 
         const maxFontW = (longSide * 0.75) / Math.max(1, part.name.length * 0.58);
         const maxFontH = shortSide * 0.72;
@@ -1447,12 +1484,42 @@ export function renderBoard3D(
         const cTop = P(centerWorld, zRoof);
         const rBase = Math.max(4, worldR * view.scale * cBase.persp);
         const rTop = Math.max(4, worldR * view.scale * cTop.persp);
+        const topIsFront = cTop.depth <= cBase.depth;
+
+        const drawCapLid = () => {
+          ctx.beginPath();
+          ctx.arc(cTop.x, cTop.y, rTop, 0, Math.PI * 2);
+          ctx.fillStyle = spec.bodyTop;
+          ctx.fill();
+          ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : '#475569';
+          ctx.lineWidth = selected ? 2 : 1.2;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(cTop.x, cTop.y, rTop * 0.92, -Math.PI * 0.36, Math.PI * 0.36);
+          ctx.closePath();
+          ctx.fillStyle = '#0f172a';
+          ctx.fill();
+
+          if (rTop >= 6) {
+            ctx.beginPath();
+            for (let a = 0; a < 3; a++) {
+              const ang = (a * Math.PI * 2) / 3 - Math.PI / 6;
+              ctx.moveTo(cTop.x, cTop.y);
+              ctx.lineTo(cTop.x + Math.cos(ang) * rTop * 0.55, cTop.y + Math.sin(ang) * rTop * 0.55);
+            }
+            ctx.strokeStyle = 'rgba(71, 85, 105, 0.7)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        };
+
+        if (!topIsFront) drawCapLid();
 
         const dxCyl = cTop.x - cBase.x, dyCyl = cTop.y - cBase.y;
         const perpAngle = Math.atan2(dyCyl, dxCyl) + Math.PI / 2;
         const nx = Math.cos(perpAngle), ny = Math.sin(perpAngle);
 
-        // Tall 3D cylinder sleeve
         ctx.beginPath();
         ctx.moveTo(cBase.x + nx * rBase, cBase.y + ny * rBase);
         ctx.lineTo(cTop.x + nx * rTop, cTop.y + ny * rTop);
@@ -1465,7 +1532,6 @@ export function renderBoard3D(
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Silver negative-polarity stripe running up the side of the 3D cylinder
         ctx.beginPath();
         ctx.moveTo(cBase.x + nx * rBase * 0.85, cBase.y + ny * rBase * 0.85);
         ctx.lineTo(cTop.x + nx * rTop * 0.85, cTop.y + ny * rTop * 0.85);
@@ -1475,34 +1541,8 @@ export function renderBoard3D(
         ctx.fillStyle = '#cbd5e1';
         ctx.fill();
 
-        // Top brushed-aluminum circular lid
-        ctx.beginPath();
-        ctx.arc(cTop.x, cTop.y, rTop, 0, Math.PI * 2);
-        ctx.fillStyle = spec.bodyTop;
-        ctx.fill();
-        ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : '#475569';
-        ctx.lineWidth = selected ? 2 : 1.2;
-        ctx.stroke();
-
-        // Negative polarity crescent on 3D cap top
-        ctx.beginPath();
-        ctx.arc(cTop.x, cTop.y, rTop * 0.92, -Math.PI * 0.36, Math.PI * 0.36);
-        ctx.closePath();
-        ctx.fillStyle = '#0f172a';
-        ctx.fill();
-
-        if (rTop >= 6) {
-          ctx.beginPath();
-          for (let a = 0; a < 3; a++) {
-            const ang = (a * Math.PI * 2) / 3 - Math.PI / 6;
-            ctx.moveTo(cTop.x, cTop.y);
-            ctx.lineTo(cTop.x + Math.cos(ang) * rTop * 0.55, cTop.y + Math.sin(ang) * rTop * 0.55);
-          }
-          ctx.strokeStyle = 'rgba(71, 85, 105, 0.7)';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-        renderRoofLabel(roofPts);
+        if (topIsFront) drawCapLid();
+        renderRoofLabel(topIsFront ? roofPts : basePts);
         ctx.restore();
         continue;
       }
@@ -1532,13 +1572,38 @@ export function renderBoard3D(
         ctx.restore();
       }
 
-      // --- 4. 4 EXTRUDED 3D SIDE WALLS ---
-      if (screenSize >= 3) {
-        const walls = [0, 1, 2, 3].map((k) => {
-          const next = (k + 1) % 4;
-          const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[k].depth + roofPts[next].depth) * 0.25;
-          return { k, next, wallDepth };
-        }).sort((a, b) => b.wallDepth - a.wallDepth);
+      const baseDepth = (basePts[0].depth + basePts[1].depth + basePts[2].depth + basePts[3].depth) * 0.25;
+      const roofDepth = (roofPts[0].depth + roofPts[1].depth + roofPts[2].depth + roofPts[3].depth) * 0.25;
+      const centerDepth = (baseDepth + roofDepth) * 0.5;
+      const roofIsFront = roofDepth <= baseDepth;
+
+      const drawRoofFace = () => {
+        ctx.beginPath();
+        roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+        ctx.closePath();
+
+        ctx.save();
+        ctx.globalAlpha *= xrayAlpha;
+        ctx.fillStyle = spec.kind === 'bga' ? '#15803d' : spec.bodyTop;
+        ctx.fill();
+        ctx.restore();
+      };
+
+      if (!roofIsFront) {
+        drawRoofFace();
+      }
+
+      // --- 4. EXTRUDED 3D SIDE WALLS (Front-wall culled to prevent dark seam bleed) ---
+      const extrudePx = Math.hypot(roofPts[0].x - basePts[0].x, roofPts[0].y - basePts[0].y);
+      if (screenSize >= 3 && extrudePx >= 0.6) {
+        const walls = [0, 1, 2, 3]
+          .map((k) => {
+            const next = (k + 1) % 4;
+            const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[k].depth + roofPts[next].depth) * 0.25;
+            return { k, next, wallDepth };
+          })
+          .filter((wl) => isFarSideUnderBoard || wl.wallDepth <= centerDepth + 0.05)
+          .sort((a, b) => b.wallDepth - a.wallDepth);
 
         for (const { k, next } of walls) {
           ctx.beginPath();
@@ -1553,23 +1618,32 @@ export function renderBoard3D(
           const isEndCapWall = spec.hasEndCaps && (k === 0 || k === 2);
           ctx.fillStyle = isEndCapWall && spec.capColor ? spec.capColor : spec.bodySide;
           ctx.fill();
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
-          ctx.lineWidth = 0.85;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+          ctx.lineWidth = 0.8;
           ctx.stroke();
           ctx.restore();
         }
       }
 
-      // --- 5. 3D ROOF FACE ---
-      ctx.beginPath();
-      roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
-      ctx.closePath();
-
-      ctx.save();
-      ctx.globalAlpha *= xrayAlpha;
-      ctx.fillStyle = spec.kind === 'bga' ? '#15803d' : spec.bodyTop;
-      ctx.fill();
-      ctx.restore();
+      // --- 5. 3D ROOF FACE (Drawn last when facing camera; underside draws base footprint last) ---
+      if (roofIsFront) {
+        drawRoofFace();
+      } else {
+        ctx.beginPath();
+        basePts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+        ctx.closePath();
+        ctx.save();
+        ctx.globalAlpha *= xrayAlpha;
+        ctx.fillStyle = spec.bodySide;
+        ctx.fill();
+        ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
+        ctx.lineWidth = selected ? 2.0 : 1.0;
+        ctx.stroke();
+        ctx.restore();
+        renderRoofLabel(basePts);
+        ctx.restore();
+        continue;
+      }
 
       // --- 6. PACKAGE-SPECIFIC STANDING / 3D ROOF DETAILS ---
       if (spec.hasEndCaps && spec.capColor && screenSize >= 5) {
@@ -1651,8 +1725,21 @@ export function renderBoard3D(
           const dxCyl = cTop.x - cBot.x, dyCyl = cTop.y - cBot.y;
           const perpAngle = Math.atan2(dyCyl, dxCyl) + Math.PI / 2;
           const nx = Math.cos(perpAngle), ny = Math.sin(perpAngle);
+          const capFront = cTop.depth <= cBot.depth;
+
+          const drawDrumCap = () => {
+            ctx.beginPath();
+            ctx.arc(cTop.x, cTop.y, rBoss * 1.06, 0, Math.PI * 2);
+            ctx.fillStyle = '#1e242d';
+            ctx.fill();
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+          };
 
           ctx.save();
+          if (!capFront) drawDrumCap();
+
           // Copper winding cylinder wall
           ctx.beginPath();
           ctx.moveTo(cBot.x + nx * rBoss, cBot.y + ny * rBoss);
@@ -1663,14 +1750,7 @@ export function renderBoard3D(
           ctx.fillStyle = '#b45309';
           ctx.fill();
 
-          // Dark sintered ferrite top drum cap
-          ctx.beginPath();
-          ctx.arc(cTop.x, cTop.y, rBoss * 1.06, 0, Math.PI * 2);
-          ctx.fillStyle = '#1e242d';
-          ctx.fill();
-          ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 1.4;
-          ctx.stroke();
+          if (capFront) drawDrumCap();
           ctx.restore();
         }
       } else if (spec.kind === 'connector' && screenSize >= 10) {
@@ -1731,7 +1811,6 @@ export function renderBoard3D(
   };
 
   // 3. Draw Far-Side -> 3D PCB Substrate -> Near-Side in true Z-order
-  const bothSidesActive = layers.top && layers.bottom;
   const farSide: 'top' | 'bottom' = topFacesCamera ? 'bottom' : 'top';
   const nearSide: 'top' | 'bottom' = topFacesCamera ? 'top' : 'bottom';
 
@@ -1739,43 +1818,52 @@ export function renderBoard3D(
     drawSideComponentsAndPins(farSide, true);
   }
 
-  // Draw 3D Extruded PCB Substrate
+  // Draw 3D Extruded PCB Substrate (solid FR-4 beveled edge band + solder mask)
   if (layers.outline && (board.outline.length > 1 || (board.outlineSegments && board.outlineSegments.length > 0))) {
-    const zFar = proj.cosP >= 0 ? zBotSurface : zTopSurface;
-    const zNear = proj.cosP >= 0 ? zTopSurface : zBotSurface;
+    const zFar = topFacesCamera ? zBotSurface : zTopSurface;
+    const zNear = topFacesCamera ? zTopSurface : zBotSurface;
 
     ctx.save();
     ctx.beginPath();
     traceMultiContour3D(ctx, board.outline, board.outlineSegments, P, zFar);
-    ctx.strokeStyle = '#927238';
-    ctx.lineWidth = Math.max(2, 4.2 * view.scale);
+    ctx.strokeStyle = '#7c6230';
+    ctx.lineWidth = Math.max(1.5, Math.min(3.5, 3 * view.scale));
     ctx.stroke();
 
     if (board.outline.length > 2) {
-      const step = Math.max(1, Math.floor(board.outline.length / 90));
-      ctx.beginPath();
-      for (let i = 0; i < board.outline.length - 1; i += step) {
-        const aFar = P(board.outline[i], zFar);
-        const aNear = P(board.outline[i], zNear);
-        ctx.moveTo(aFar.x, aFar.y);
-        ctx.lineTo(aNear.x, aNear.y);
+      const step = Math.max(1, Math.floor(board.outline.length / 180));
+      ctx.fillStyle = '#5c4922';
+      ctx.strokeStyle = 'rgba(212, 175, 55, 0.28)';
+      ctx.lineWidth = 0.7;
+      for (let i = 0; i < board.outline.length - step; i += step) {
+        const p0 = board.outline[i];
+        const p1 = board.outline[Math.min(i + step, board.outline.length - 1)];
+        if (p0.x === p1.x && p0.y === p1.y) continue;
+        const f0 = P(p0, zFar);
+        const f1 = P(p1, zFar);
+        const n1 = P(p1, zNear);
+        const n0 = P(p0, zNear);
+        ctx.beginPath();
+        ctx.moveTo(f0.x, f0.y);
+        ctx.lineTo(f1.x, f1.y);
+        ctx.lineTo(n1.x, n1.y);
+        ctx.lineTo(n0.x, n0.y);
+        ctx.closePath();
+        ctx.fill();
       }
-      ctx.strokeStyle = 'rgba(161, 126, 60, 0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
     }
 
     ctx.beginPath();
     traceMultiContour3D(ctx, board.outline, board.outlineSegments, P, zNear);
     if (board.outline.length > 2) {
-      const alpha = bothSidesActive ? 0.72 : 0.92;
+      const alpha = bothSidesActive ? 0.78 : 0.94;
       ctx.fillStyle = isClassic
         ? `rgba(16, 78, 52, ${alpha})`
         : `rgba(13, 35, 39, ${alpha})`;
       ctx.fill('evenodd');
     }
     ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 1.9;
+    ctx.lineWidth = 1.85;
     ctx.stroke();
     ctx.restore();
   }
@@ -1796,7 +1884,7 @@ export function renderBoard3D(
         ? selection.index
         : (info.pinIndices.find((idx) => sideVisible(board.pins[idx].side, layers)) ?? info.pinIndices[0]);
       const hubPin = board.pins[hubIdx];
-      const { zBase: zHub, zSign: hubSign } = getSideZ(hubPin.side, layers, topFacesCamera);
+      const { zBase: zHub, zSign: hubSign } = getSideZ(hubPin.side, layers);
       const sHub = P(hubPin, zHub);
 
       ctx.save();
@@ -1806,7 +1894,7 @@ export function renderBoard3D(
         if (idx === hubIdx) continue;
         const targetPin = board.pins[idx];
         const visible = sideVisible(targetPin.side, layers);
-        const { zBase: zTarget } = getSideZ(targetPin.side, layers, topFacesCamera);
+        const { zBase: zTarget } = getSideZ(targetPin.side, layers);
         const sTarget = P(targetPin, zTarget);
         const distWorld = Math.hypot(targetPin.x - hubPin.x, targetPin.y - hubPin.y);
         const arcLift = Math.min(260, Math.max(45, distWorld * 0.18)) * hubSign;
@@ -1832,17 +1920,17 @@ export function renderBoard3D(
     let selPt: ProjectedPoint | null = null;
     if (selection.kind === 'pin' && board.pins[selection.index]) {
       const pin = board.pins[selection.index];
-      const { zBase } = getSideZ(pin.side, layers, topFacesCamera);
+      const { zBase } = getSideZ(pin.side, layers);
       selPt = P(pin, zBase);
     } else if (selection.kind === 'nail' && board.nails[selection.index]) {
       const nail = board.nails[selection.index];
-      const { zBase } = getSideZ(nail.side, layers, topFacesCamera);
+      const { zBase } = getSideZ(nail.side, layers);
       selPt = P(nail, zBase);
     } else if (selection.kind === 'part' && board.parts[selection.index]?.box && !board.parts[selection.index]?.isDummy) {
       const part = board.parts[selection.index];
       const spec = classifyPartPackage(part);
       const b = part.box!;
-      const { zBase, zSign } = getSideZ(part.side, layers, topFacesCamera);
+      const { zBase, zSign } = getSideZ(part.side, layers);
       const zRoof = zBase + zSign * spec.heightMil;
       selPt = P({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, zRoof);
     }
@@ -1859,7 +1947,7 @@ export function renderBoard3D(
 
   // 6. 3D Orientation Compass Gizmo (only in interactive 3D orbit mode)
   if (showGizmo) {
-    draw3DGizmo(ctx, w, rotation, cam, flipX, flipY, palette);
+    draw3DGizmo(ctx, w, rotation, cam, flipX, flipY, bothSidesActive && flipY, palette);
   }
 
   void tr2d;

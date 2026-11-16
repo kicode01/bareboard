@@ -4,7 +4,7 @@
  */
 // Bump the suffix on every deploy: the activate handler drops older caches,
 // so without a bump an installed copy would keep serving the previous build.
-const CACHE = 'bareboard-v2';
+const CACHE = 'bareboard-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg',
                './icon-192.png', './icon-512.png'];
 
