@@ -11,6 +11,7 @@ export function parseBrd(bytes: Uint8Array): RawBoard {
   let block = 0;
   let nFormat = Infinity, nParts = Infinity, nPins = Infinity, nNails = Infinity;
   let prevEnd = 0;
+  const partCodes: number[] = [];
 
   for (const source of lines) {
     const line = source.replace(/^\s+/, '');
@@ -45,6 +46,7 @@ export function parseBrd(bytes: Uint8Array): RawBoard {
             pinStart: prevEnd, pinEnd: Math.min(end, Number.MAX_SAFE_INTEGER),
           };
           prevEnd = part.pinEnd;
+          partCodes.push(code);
           raw.parts.push(part);
           break;
         }
@@ -63,6 +65,14 @@ export function parseBrd(bytes: Uint8Array): RawBoard {
         }
       }
     } catch { /* skip malformed record */ }
+  }
+
+  // Many OEM/Apple .brd exports store only side (1=top, 2=bottom) without SMD bitflags (0x04/0x08).
+  // If no part in the file sets bit 0x0c, avoid mislabeling surface-mount laptop parts as through-hole.
+  if (!partCodes.some((c) => (c & 0x0c) !== 0)) {
+    for (const part of raw.parts) {
+      part.type = 'smd';
+    }
   }
 
   // Lenovo variant: pins with an empty net inherit the net of the matching nail probe.

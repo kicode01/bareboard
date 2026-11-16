@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { Board, Layers, Part, Point, Selection, Side } from '../types';
 import type { BoardIndex } from '../lib/search';
 import type { Palette } from '../lib/theme';
 import { fitView, focusBounds, makeTransform, pointInPolygon, zoomAt, type View } from '../lib/geometry';
+import { describeSpecialNet, formatMountType, getPackageMeta } from '../lib/packages';
 import { BrandMark } from '@/components/BrandMark';
 import { Button } from '@/components/ui/button';
 import {
@@ -906,7 +907,7 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
     drawScaleBar(ctx, w, h, view.scale, renderMode, cam3d, palette, isClassicTheme);
   }, [board, index, layers, view, size, tr, proj3d, effectiveCam, cam3d, renderMode, flipX, flipY, rotation, selection, highlightNet, focusParts, palette, isClassicTheme]);
 
-  const localPoint = (e: ReactPointerEvent | ReactWheelEvent | ReactMouseEvent): Point => {
+  const localPoint = (e: ReactPointerEvent | WheelEvent | ReactMouseEvent): Point => {
     const r = canvasRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
@@ -1015,10 +1016,12 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
     onSelect(partIndex >= 0 ? { kind: 'part', index: partIndex, key: `part:${partIndex}` } : null);
   }, [centerSelectToken, nearest, findPartAtScreen, board, onSelect, size.w, size.h]);
 
-  const onWheel = (e: ReactWheelEvent) => {
+  const wheelHandlerRef = useRef<(e: WheelEvent) => void>(() => {});
+  wheelHandlerRef.current = (e: WheelEvent) => {
     e.preventDefault();
     if (!board) return;
-    const p = localPoint(e);
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
     if (renderMode === '3d') {
       onView(zoomAt3D(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation, cam3d, flipZ));
@@ -1026,6 +1029,14 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
       onView(zoomAt(view, factor, p.x, p.y, size.w, size.h, board, flipX, flipY, rotation));
     }
   };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const listener = (e: WheelEvent) => wheelHandlerRef.current(e);
+    canvas.addEventListener('wheel', listener, { passive: false });
+    return () => canvas.removeEventListener('wheel', listener);
+  }, []);
 
   const quick = useRef<{ view: View } | null>(null);
 
@@ -1170,25 +1181,28 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
       if (hit.kind === 'pin') {
         const pin = board.pins[hit.index];
         const partObj = pin.part > 0 ? board.parts[pin.part - 1] : undefined;
+        const partMeta = partObj && !partObj.isDummy ? getPackageMeta(classifyPartPackage(partObj).kind) : null;
         const partName = partObj ? (partObj.isDummy ? 'Test Pad' : partObj.name) : '—';
         const pinTitle = pin.name && pin.number && pin.name !== pin.number
           ? `${partName} — Pin ${pin.number} (${pin.name})`
           : `${partName} — Pin ${pin.name || pin.number || hit.index + 1}`;
+        const netHint = describeSpecialNet(pin.net);
         setHover({
           sx: p.x, sy: p.y, title: pinTitle,
           lines: [
-            `Net: ${pin.net}`,
-            `Part: ${partName}`,
+            `Net: ${pin.net}${netHint ? ` (${netHint})` : ''}`,
+            `Part: ${partName}${partMeta ? ` · ${partMeta.friendly}` : ''}`,
             `Side: ${pin.side === 'bottom' ? 'Bottom' : pin.side === 'both' ? 'Both' : 'Top'}`,
             `Coords: ${Math.round(pin.x)}, ${Math.round(pin.y)} mil`,
           ],
         });
       } else {
         const nail = board.nails[hit.index];
+        const netHint = describeSpecialNet(nail.net);
         setHover({
-          sx: p.x, sy: p.y, title: `Test point ${nail.probe || hit.index + 1}`,
+          sx: p.x, sy: p.y, title: `Test point #${nail.probe || hit.index + 1}`,
           lines: [
-            `Net: ${nail.net}`,
+            `Net: ${nail.net}${netHint ? ` (${netHint})` : ''}`,
             `Side: ${nail.side === 'bottom' ? 'Bottom' : nail.side === 'both' ? 'Both' : 'Top'}`,
             `Coords: ${Math.round(nail.x)}, ${Math.round(nail.y)} mil`,
           ],
@@ -1200,12 +1214,13 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
       const partIdx = findPartAtScreen(p.x, p.y);
       if (partIdx >= 0) {
         const part = board.parts[partIdx];
-        const spec = classifyPartPackage(part);
+        const meta = getPackageMeta(classifyPartPackage(part).kind);
+        const sideText = part.side === 'bottom' ? 'Bottom' : part.side === 'both' ? 'Both' : 'Top';
         setHover({
-          sx: p.x, sy: p.y, title: `${part.name} (${spec.kind.toUpperCase()})`,
+          sx: p.x, sy: p.y, title: `${part.name} — ${meta.label}`,
           lines: [
-            `Pins: ${Math.max(0, part.pinEnd - part.pinStart)}`,
-            `Side: ${part.side === 'bottom' ? 'Bottom' : part.side === 'both' ? 'Both' : 'Top'} (${part.type.toUpperCase()})`,
+            meta.role,
+            `Pins: ${Math.max(0, part.pinEnd - part.pinStart)} · ${sideText} · ${formatMountType(part.type)}`,
           ],
         });
         return;
@@ -1284,7 +1299,6 @@ export const BoardCanvas = forwardRef<BoardCanvasHandle, Props>(function BoardCa
         aria-label={board
           ? `${board.name}: ${realPartCount} components, ${board.pins.length} pins. Use the inspector to browse parts.`
           : 'No board loaded'}
-        onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

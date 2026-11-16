@@ -1,4 +1,6 @@
 import type { Board } from '../types';
+import { classifyPartPackage } from '../render/realistic3d';
+import { describeNet, getPackageMeta, type NetMeta } from './packages';
 
 export interface NetInfo {
   name: string;
@@ -50,19 +52,70 @@ function score(text: string, q: string): number {
   return i === q.length ? 20 : 0;
 }
 
+function scorePartCategory(meta: ReturnType<typeof getPackageMeta>, qRaw: string): number {
+  const q = qRaw.toLowerCase();
+  if (q.length < 2) return 0;
+  const label = meta.label.toLowerCase();
+  const friendly = meta.friendly.toLowerCase();
+  if (friendly === q || label === q || meta.short.toLowerCase() === q) return 68;
+  if (friendly.startsWith(q) || label.startsWith(q)) return 62;
+  if (meta.keywords.some((kw) => kw === q || kw.startsWith(q))) return 58;
+  if (label.includes(q) || meta.keywords.some((kw) => kw.includes(q))) return 42;
+  return 0;
+}
+
+function scoreNetCategory(meta: NetMeta | null, qRaw: string): number {
+  if (!meta) return 0;
+  const q = qRaw.toLowerCase();
+  if (q.length < 2) return 0;
+  const friendly = meta.friendly.toLowerCase();
+  const badge = meta.badge.toLowerCase();
+  if (friendly === q || badge === q) return 64;
+  if (friendly.startsWith(q) || badge.startsWith(q)) return 58;
+  if (meta.keywords.some((kw) => kw === q || kw.startsWith(q))) return 52;
+  if (friendly.includes(q) || meta.description.toLowerCase().includes(q)) return 40;
+  return 0;
+}
+
 export function search(index: BoardIndex, query: string, board: Board, limit = 40): SearchHit[] {
-  const q = query.trim().toUpperCase();
+  const trimmed = query.trim();
+  const q = trimmed.toUpperCase();
   if (!q) return [];
   const hits: SearchHit[] = [];
   index.partsByName.forEach((indices, name) => {
-    const s = score(name, q);
-    if (s) for (const i of indices) {
-      hits.push({ kind: 'part', label: board.parts[i].name, index: i, sub: `${board.parts[i].side === 'bottom' ? 'Bot' : board.parts[i].side === 'both' ? 'Both' : 'Top'}, ${Math.max(0, board.parts[i].pinEnd - board.parts[i].pinStart)} pins`, score: s });
+    const nameScore = score(name, q);
+    for (const i of indices) {
+      const part = board.parts[i];
+      const meta = getPackageMeta(classifyPartPackage(part).kind);
+      const catScore = scorePartCategory(meta, trimmed);
+      const bestScore = Math.max(nameScore, catScore);
+      if (bestScore > 0) {
+        const sideLabel = part.side === 'bottom' ? 'Bot' : part.side === 'both' ? 'Both' : 'Top';
+        const pinCount = Math.max(0, part.pinEnd - part.pinStart);
+        hits.push({
+          kind: 'part',
+          label: part.name,
+          index: i,
+          sub: `${meta.friendly} · ${sideLabel}, ${pinCount}p`,
+          score: bestScore,
+        });
+      }
     }
   });
   index.nets.forEach((info, name) => {
-    const s = score(name, q);
-    if (s) hits.push({ kind: 'net', label: info.name, index: 0, sub: `${info.pinIndices.length} pins, ${info.partIds.size} parts`, score: s - 5 });
+    const netMeta = describeNet(info.name);
+    const nameScore = score(name, q);
+    const catScore = scoreNetCategory(netMeta, trimmed);
+    const bestScore = Math.max(nameScore, catScore);
+    if (bestScore > 0) {
+      hits.push({
+        kind: 'net',
+        label: info.name,
+        index: 0,
+        sub: netMeta ? `${netMeta.friendly} · ${info.pinIndices.length}p` : `${info.pinIndices.length} pins, ${info.partIds.size} parts`,
+        score: bestScore - 5,
+      });
+    }
   });
   return hits.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)).slice(0, limit);
 }

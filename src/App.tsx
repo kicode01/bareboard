@@ -6,6 +6,7 @@ import { demoFile } from './parsers/demo';
 import { extensionOf } from './parsers/detect';
 import { latin1 } from './parsers/util';
 import { buildIndex, search } from './lib/search';
+import { describeNet, getPackageMeta } from './lib/packages';
 import type { View } from './lib/geometry';
 import { filesFromDataTransfer, filesFromFileList } from './lib/files';
 import { consumeLaunchFiles, initPwa, isStandalone, promptInstall, subscribeInstall } from './lib/pwa';
@@ -15,13 +16,13 @@ import { OptionsDialog } from './components/OptionsDialog';
 import { Toolbar } from './components/Toolbar';
 import { CommandPalette } from './components/CommandPalette';
 import { ExplorerPanel, SAMPLES, type BatchRow, type RealPartEntry, type SampleSpec } from './components/ExplorerPanel';
-import { InspectorPanel } from './components/InspectorPanel';
+import { InspectorPanel, type PackageBreakdownEntry } from './components/InspectorPanel';
 import { CanvasDock } from './components/CanvasDock';
 import { BrandMark } from '@/components/BrandMark';
 import { MaterialIcon } from '@/components/MaterialIcon';
-import { packageShortLabel } from './components/PackageGlyph';
+import { ComponentGuideDialog } from './components/ComponentGuideDialog';
 import { BoardCanvas, type BoardCanvasHandle } from './render/BoardCanvas';
-import { classifyPartPackage, type Camera3D, type RenderMode } from './render/realistic3d';
+import { classifyPartPackage, type Camera3D, type PackageKind, type RenderMode } from './render/realistic3d';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -60,13 +61,13 @@ const ACCEPT = '.brd,.bdv,.bvr,.cad,.cst,.asc,.bom,.zip,.fz,.cae,.xzzpcb,.tvw,.b
 const LAYER_META: readonly [keyof Layers, string, 'top' | 'bottom' | undefined][] = [
   ['outline', 'Outline', undefined],
   ['pins', 'Pins & Pads', undefined],
-  ['nails', 'Test Nails', undefined],
-  ['labels', 'RefDes Labels', undefined],
-  ['nets', 'Net Lens', undefined],
+  ['nails', 'Test Points (Nails)', undefined],
+  ['labels', 'Part Labels (R1, U1…)', undefined],
+  ['nets', 'Net Connections', undefined],
   ['grid', 'Grid', undefined],
   ['top', 'Top Side', 'top'],
   ['bottom', 'Bottom Side', 'bottom'],
-  ['tooltip', 'Tooltips', undefined],
+  ['tooltip', 'Hover Tooltips', undefined],
 ];
 
 function fmtBytes(n: number): string {
@@ -128,6 +129,7 @@ export default function App() {
   const [rightWidth, setRightWidth] = useState(308);
 
   // Dialogs
+  const [guideModal, setGuideModal] = useState(false);
   const [keysModal, setKeysModal] = useState(false);
   const [reModal, setReModal] = useState(false);
   const [about, setAbout] = useState(false);
@@ -189,14 +191,30 @@ export default function App() {
   const partNames = useMemo(() => realParts.map((p) => p.name), [realParts]);
   const netNames = useMemo(() => netList.map((n) => n.name), [netList]);
 
-  const packageCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+  const packageCounts = useMemo<PackageBreakdownEntry[]>(() => {
+    const counts = new Map<PackageKind, number>();
     for (const { kind } of realPartEntries) {
-      const label = packageShortLabel(kind);
-      counts.set(label, (counts.get(label) || 0) + 1);
+      counts.set(kind, (counts.get(kind) || 0) + 1);
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    return [...counts.entries()]
+      .map(([kind, count]) => ({ kind, count }))
+      .sort((a, b) => b.count - a.count);
   }, [realPartEntries]);
+
+  const handleFilterByKind = useCallback(
+    (term: string, scope: 'all' | 'parts' | 'nets' = 'parts') => {
+      setQuery(term);
+      setLeftTab('search');
+      setBrowseFilter(scope);
+      if (isPhone) {
+        setMobileInspectorOpen(false);
+        setDrawerOpen(true);
+      } else {
+        setLeftOpen(true);
+      }
+    },
+    [isPhone],
+  );
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
@@ -491,7 +509,7 @@ export default function App() {
           doFlip();
           break;
         case 'escape':
-          if (cmdOpen || options || reModal || keysModal || about) break;
+          if (cmdOpen || options || reModal || keysModal || guideModal || about) break;
           if (drawerOpen) {
             setDrawerOpen(false);
             break;
@@ -606,6 +624,7 @@ export default function App() {
     mobileInspectorOpen,
     reModal,
     keysModal,
+    guideModal,
     about,
     options,
     cmdOpen,
@@ -650,20 +669,23 @@ export default function App() {
 
   const peekHeadline = useMemo(() => {
     if (selectedPart) {
-      const spec = classifyPartPackage(selectedPart);
-      return `${selectedPart.name} (${packageShortLabel(spec.kind)}, ${selectedPart.pinEnd - selectedPart.pinStart}p)`;
+      const meta = getPackageMeta(classifyPartPackage(selectedPart).kind);
+      return `${selectedPart.name} · ${meta.friendly} (${selectedPart.pinEnd - selectedPart.pinStart} pins)`;
     }
     if (selectedPin) {
-      return `Pin ${selectedPin.name || selectedPin.number || `#${selection!.index + 1}`} — ${selectedPin.net}`;
+      const netMeta = describeNet(selectedPin.net);
+      return `Pin ${selectedPin.name || selectedPin.number || `#${selection!.index + 1}`} — ${selectedPin.net}${netMeta ? ` (${netMeta.friendly})` : ''}`;
     }
     if (selectedNail) {
-      return `Test Pt #${selectedNail.probe || selection!.index + 1} — ${selectedNail.net}`;
+      const netMeta = describeNet(selectedNail.net);
+      return `Test Pt #${selectedNail.probe || selection!.index + 1} — ${selectedNail.net}${netMeta ? ` (${netMeta.friendly})` : ''}`;
     }
     if (activeNet) {
-      return `Net ${activeNet.name} (${activeNet.pinIndices.length}p)`;
+      const netMeta = describeNet(activeNet.name);
+      return `Net ${activeNet.name}${netMeta ? ` · ${netMeta.friendly}` : ''} (${activeNet.pinIndices.length} pins)`;
     }
     if (board) {
-      return `${board.name} — ${realParts.length.toLocaleString()}p, ${netNames.length.toLocaleString()}n`;
+      return `${board.name} — ${realParts.length.toLocaleString()} parts, ${netNames.length.toLocaleString()} nets`;
     }
     return 'Inspector — No board loaded';
   }, [selectedPart, selectedPin, selectedNail, activeNet, board, realParts.length, netNames.length, selection]);
@@ -692,6 +714,7 @@ export default function App() {
     mirror: () => setFlipX((v) => !v),
     toggleLayer: toggle,
     setTheme,
+    showGuide: () => setGuideModal(true),
     showKeys: () => setKeysModal(true),
     showRe: () => setReModal(true),
     about: () => setAbout(true),
@@ -764,6 +787,10 @@ export default function App() {
         setDrawerOpen(false);
         setOptions(true);
       }}
+      onOpenGuide={() => {
+        setDrawerOpen(false);
+        setGuideModal(true);
+      }}
       onOpenKeys={() => {
         setDrawerOpen(false);
         setKeysModal(true);
@@ -798,6 +825,8 @@ export default function App() {
       onHighlightNet={setHighlightNet}
       onFitNet={pickNet}
       onCenterSelection={() => setFocusToken((t) => t + 1)}
+      onFilterByKind={handleFilterByKind}
+      onOpenGuide={() => setGuideModal(true)}
       onOpenKeys={() => setKeysModal(true)}
       onOpenReNotes={() => setReModal(true)}
       onOpenAbout={() => setAbout(true)}
@@ -1631,11 +1660,15 @@ export default function App() {
           <span>
             {board ? `${mm(board.bounds.maxX - board.bounds.minX)} × ${mm(board.bounds.maxY - board.bounds.minY)} mm` : '—'}
           </span>
-          <span>XY {cursor ? `${Math.round(cursor.x)}, ${Math.round(cursor.y)} mil` : '—'}</span>
-          <span>{(view.scale * 1000).toFixed(0)} px/in</span>
-          <span>{renderMode === '3d' ? '3D' : renderMode === 'realistic' ? '2D Real' : '2D CAD'}</span>
-          {renderMode === '3d' && <span>Cam {Math.round(cam3d.pitchDeg)}°/{Math.round(cam3d.yawDeg)}°</span>}
-          <span>Rot {rotation}°</span>
+          <span title="Cursor board coordinates in mils (1 mil = 0.0254 mm)">
+            XY {cursor ? `${Math.round(cursor.x)}, ${Math.round(cursor.y)} mil` : '—'}
+          </span>
+          <span title="Zoom magnification in pixels per board inch">{(view.scale * 1000).toFixed(0)} px/in</span>
+          <span title="Active render mode">
+            {renderMode === '3d' ? '3D View' : renderMode === 'realistic' ? '2D Realistic' : '2D CAD'}
+          </span>
+          {renderMode === '3d' && <span title="3D camera tilt pitch and yaw angle">Camera {Math.round(cam3d.pitchDeg)}°/{Math.round(cam3d.yawDeg)}°</span>}
+          <span title="Current 2D/3D board rotation">Rotate {rotation}°</span>
           <span className="status-right ml-auto flex items-center gap-2 text-muted-foreground">
             {board ? (
               <>
@@ -1669,6 +1702,7 @@ export default function App() {
           onOpenFile={() => fileRef.current?.click()}
           onOpenOptions={() => setOptions(true)}
           onOpenKeys={() => setKeysModal(true)}
+          onOpenGuide={() => setGuideModal(true)}
         />
 
         {/* BASE UI ACCESSIBLE MODALS */}
@@ -1712,6 +1746,13 @@ export default function App() {
             </DialogBody>
           </DialogContent>
         </Dialog>
+
+        <ComponentGuideDialog
+          open={guideModal}
+          onOpenChange={setGuideModal}
+          hasBoard={Boolean(board)}
+          onFilterTerm={handleFilterByKind}
+        />
 
         <Dialog open={keysModal} onOpenChange={setKeysModal}>
           <DialogContent aria-label="Keyboard and touch controls">

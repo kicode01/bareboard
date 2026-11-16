@@ -6,6 +6,7 @@ import { extensionOf } from '../parsers/detect';
 import type { NetInfo, SearchHit } from '../lib/search';
 import type { Theme } from '../lib/theme';
 import type { PackageKind } from '../render/realistic3d';
+import { describeNet, getPackageMeta } from '../lib/packages';
 import { MaterialIcon } from '@/components/MaterialIcon';
 import { PackageGlyph } from './PackageGlyph';
 import { Badge } from '@/components/ui/badge';
@@ -108,6 +109,7 @@ interface ExplorerPanelProps {
   onToggleTheme?: () => void;
   onOpenOptions?: () => void;
   onOpenKeys?: () => void;
+  onOpenGuide?: () => void;
   onOpenReNotes?: () => void;
   onOpenAbout?: () => void;
 }
@@ -145,6 +147,7 @@ export function ExplorerPanel({
   onToggleTheme,
   onOpenOptions,
   onOpenKeys,
+  onOpenGuide,
   onOpenReNotes,
   onOpenAbout,
 }: ExplorerPanelProps) {
@@ -244,8 +247,8 @@ export function ExplorerPanel({
             <input
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="Filter parts or nets…"
-              aria-label="Filter parts and nets"
+              placeholder="Search part, type, or net (e.g. resistor, usb)…"
+              aria-label="Filter parts, types, and nets"
               className="min-w-0 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
             />
             {query && (
@@ -315,10 +318,65 @@ export function ExplorerPanel({
                     const active =
                       (hit.kind === 'part' && selectedPartIndex === hit.index) ||
                       (hit.kind === 'net' && highlightNet === hit.label);
+                    if (hit.kind === 'part') {
+                      const part = board.parts[hit.index];
+                      const meta = kind ? getPackageMeta(kind) : null;
+                      const pinCount = part ? Math.max(0, part.pinEnd - part.pinStart) : 0;
+                      return (
+                        <button
+                          key={vi.key}
+                          type="button"
+                          title={meta ? `${hit.label} — ${meta.label} (${meta.short}): ${meta.role}` : hit.label}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: `${vi.size}px`,
+                            transform: `translateY(${vi.start}px)`,
+                          }}
+                          className={cn(
+                            'result-item flex items-center gap-2 rounded-md px-2 text-left transition-colors',
+                            active ? 'active bg-primary/12' : 'hover:bg-secondary',
+                          )}
+                          onClick={() => onSelect({ kind: 'part', index: hit.index, key: `part:${hit.index}` }, true)}
+                        >
+                          {kind ? (
+                            <PackageGlyph kind={kind} />
+                          ) : (
+                            <MaterialIcon name="memory" size={15} className="text-muted-foreground" />
+                          )}
+                          <span className={cn('result-label text-xs font-medium text-foreground', meta ? 'shrink-0' : 'min-w-0 flex-1 truncate')}>
+                            {hit.label}
+                          </span>
+                          {meta && (
+                            <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted-foreground">
+                              {meta.friendly}
+                            </span>
+                          )}
+                          {side && (
+                            <span
+                              className={cn(
+                                'shrink-0 text-[10.5px] font-medium',
+                                side === 'bottom' ? 'text-indigo-600 dark:text-indigo-400' : 'text-primary',
+                              )}
+                            >
+                              {side === 'bottom' ? 'Bot' : side === 'both' ? 'Both' : 'Top'}
+                            </span>
+                          )}
+                          <span className="result-sub shrink-0 w-7 text-right text-[11px] tabular-nums text-muted-foreground">
+                            {pinCount}p
+                          </span>
+                        </button>
+                      );
+                    }
+                    const netMeta = describeNet(hit.label);
+                    const netInfo = netList.find((n) => n.name === hit.label);
                     return (
                       <button
                         key={vi.key}
                         type="button"
+                        title={netMeta ? `${hit.label} — ${netMeta.badge}: ${netMeta.description}` : `${hit.label} — ${hit.sub}`}
                         style={{
                           position: 'absolute',
                           top: 0,
@@ -331,34 +389,21 @@ export function ExplorerPanel({
                           'result-item flex items-center gap-2 rounded-md px-2 text-left transition-colors',
                           active ? 'active bg-primary/12' : 'hover:bg-secondary',
                         )}
-                        onClick={() => {
-                          if (hit.kind === 'part') {
-                            onSelect({ kind: 'part', index: hit.index, key: `part:${hit.index}` }, true);
-                          } else {
-                            onSelectNet(hit.label);
-                          }
-                        }}
+                        onClick={() => onSelectNet(hit.label)}
                       >
-                        {kind ? (
-                          <PackageGlyph kind={kind} />
-                        ) : (
-                          <MaterialIcon name={hit.kind === 'part' ? 'memory' : 'hub'} size={15} className="text-muted-foreground" />
-                        )}
-                        <span className="result-label min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                          <MaterialIcon name="hub" size={15} className="text-amber-600 dark:text-amber-400" />
+                        </span>
+                        <span className={cn('result-label text-xs font-medium text-foreground', netMeta ? 'shrink-0' : 'min-w-0 flex-1 truncate')}>
                           {hit.label}
                         </span>
-                        {side && (
-                          <span
-                            className={cn(
-                              'shrink-0 text-[10.5px] font-medium',
-                              side === 'bottom' ? 'text-indigo-600 dark:text-indigo-400' : 'text-primary',
-                            )}
-                          >
-                            {side === 'bottom' ? 'Bot' : side === 'both' ? 'Both' : 'Top'}
+                        {netMeta && (
+                          <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted-foreground">
+                            {netMeta.friendly}
                           </span>
                         )}
-                        <span className="result-sub shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                          {hit.sub}
+                        <span className="result-sub shrink-0 w-7 text-right text-[11px] tabular-nums text-muted-foreground">
+                          {netInfo ? `${netInfo.pinIndices.length}p` : hit.sub}
                         </span>
                       </button>
                     );
@@ -366,11 +411,13 @@ export function ExplorerPanel({
 
                   if (row.type === 'part') {
                     const { part, index: pIdx, kind } = row.entry;
+                    const meta = getPackageMeta(kind);
                     const active = selectedPartIndex === pIdx;
                     return (
                       <button
                         key={vi.key}
                         type="button"
+                        title={`${part.name} — ${meta.label} (${meta.short}): ${meta.role}`}
                         style={{
                           position: 'absolute',
                           top: 0,
@@ -386,8 +433,11 @@ export function ExplorerPanel({
                         onClick={() => onSelect({ kind: 'part', index: pIdx, key: `part:${pIdx}` }, true)}
                       >
                         <PackageGlyph kind={kind} />
-                        <span className="result-label min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                        <span className="result-label shrink-0 text-xs font-medium text-foreground">
                           {part.name}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted-foreground">
+                          {meta.friendly}
                         </span>
                         <span
                           className={cn(
@@ -405,11 +455,17 @@ export function ExplorerPanel({
                   }
 
                   const { net } = row;
+                  const netMeta = describeNet(net.name);
                   const active = highlightNet === net.name;
                   return (
                     <button
                       key={vi.key}
                       type="button"
+                      title={
+                        netMeta
+                          ? `${net.name} — ${netMeta.badge}: ${netMeta.description} (${net.pinIndices.length} pins, ${net.partIds.size} parts)`
+                          : `${net.name} — ${net.pinIndices.length} connected pins across ${net.partIds.size} parts`
+                      }
                       style={{
                         position: 'absolute',
                         top: 0,
@@ -427,10 +483,18 @@ export function ExplorerPanel({
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center">
                         <MaterialIcon name="hub" size={15} className="text-amber-600 dark:text-amber-400" />
                       </span>
-                      <span className="result-label min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                      <span className={cn('result-label text-xs font-medium text-foreground', netMeta ? 'shrink-0' : 'min-w-0 flex-1 truncate')}>
                         {net.name}
                       </span>
-                      <span className="result-sub shrink-0 w-7 text-right text-[11px] tabular-nums text-muted-foreground">
+                      {netMeta && (
+                        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted-foreground">
+                          {netMeta.friendly}
+                        </span>
+                      )}
+                      <span
+                        className="result-sub shrink-0 w-7 text-right text-[11px] tabular-nums text-muted-foreground"
+                        title={`${net.pinIndices.length} pins across ${net.partIds.size} parts`}
+                      >
                         {net.pinIndices.length}p
                       </span>
                     </button>
@@ -545,7 +609,7 @@ export function ExplorerPanel({
                 <DiagRow k="Outline points" v={board.outline.length} />
                 <DiagRow
                   k="Bounds"
-                  v={`${Math.round(board.bounds.maxX - board.bounds.minX)} × ${Math.round(board.bounds.maxY - board.bounds.minY)} mil`}
+                  v={`${Math.round(board.bounds.maxX - board.bounds.minX)} × ${Math.round(board.bounds.maxY - board.bounds.minY)} mil (${((board.bounds.maxX - board.bounds.minX) * 0.0254).toFixed(1)} × ${((board.bounds.maxY - board.bounds.minY) * 0.0254).toFixed(1)} mm)`}
                 />
               </>
             )}
@@ -592,7 +656,7 @@ export function ExplorerPanel({
                   />
                   <span className="batch-name min-w-0 flex-1 truncate text-[11px] font-medium">{r.name}</span>
                   <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
-                    {r.ok ? `${r.parts}p / ${r.pins}π / ${r.nets}n` : r.format}
+                    {r.ok ? `${r.parts} parts · ${r.pins} pins · ${r.nets} nets` : r.format}
                   </span>
                 </div>
               ))}
@@ -632,7 +696,13 @@ export function ExplorerPanel({
 
       {isPhone && theme !== 'classic' && (
         <div className="shrink-0 border-t border-border bg-secondary/40 p-2">
-          <div className="grid grid-cols-5 gap-1">
+          <div className="grid grid-cols-3 gap-1">
+            {onOpenGuide && (
+              <Button size="xs" variant="outline" onClick={onOpenGuide}>
+                <MaterialIcon name="memory" size={14} className="text-primary" />
+                <span>Parts guide</span>
+              </Button>
+            )}
             {onToggleTheme && (
               <Button size="xs" variant="outline" onClick={onToggleTheme} title="Switch Dark / Light theme">
                 <MaterialIcon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} size={14} />
@@ -648,19 +718,19 @@ export function ExplorerPanel({
             {onOpenKeys && (
               <Button size="xs" variant="outline" onClick={onOpenKeys}>
                 <MaterialIcon name="keyboard" size={14} />
-                <span>Help</span>
+                <span>Controls</span>
               </Button>
             )}
             {onOpenReNotes && (
               <Button size="xs" variant="outline" onClick={onOpenReNotes}>
                 <MaterialIcon name="description" size={14} />
-                <span>Notes</span>
+                <span>Formats</span>
               </Button>
             )}
             {onOpenAbout && (
               <Button size="xs" variant="outline" onClick={onOpenAbout}>
                 <MaterialIcon name="info" size={14} />
-                <span>Info</span>
+                <span>About</span>
               </Button>
             )}
           </div>

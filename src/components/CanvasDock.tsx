@@ -30,9 +30,9 @@ interface CanvasDockProps {
 const LAYER_ITEMS: readonly [keyof Layers, string][] = [
   ['outline', 'Board Outline'],
   ['pins', 'Pins & Pads'],
-  ['labels', 'RefDes Labels'],
-  ['nails', 'Test Nails'],
-  ['nets', 'Net Lens'],
+  ['labels', 'Part Labels (R1, U1…)'],
+  ['nails', 'Test Points (Nails)'],
+  ['nets', 'Net Connections'],
   ['grid', 'Grid'],
   ['tooltip', 'Hover Tooltips'],
 ];

@@ -1,24 +1,8 @@
 import type { PackageKind } from '../render/realistic3d';
-
-const KIND_LABELS: Record<PackageKind, string> = {
-  mlcc: 'CAP',
-  electrolytic: 'ELYT',
-  tantalum: 'TANT',
-  resistor: 'RES',
-  inductor: 'COIL',
-  diode: 'DIOD',
-  led: 'LED',
-  transistor: 'FET',
-  bga: 'BGA',
-  ic: 'IC',
-  connector: 'CONN',
-  crystal: 'XTAL',
-  fuse: 'FUSE',
-  generic: 'PART',
-};
+import { getPackageMeta } from '../lib/packages';
 
 export function packageShortLabel(kind: PackageKind): string {
-  return KIND_LABELS[kind];
+  return getPackageMeta(kind).short;
 }
 
 /** Crisp 22x22 SVG package thumbnail matching the realistic 2D/3D component artwork. */

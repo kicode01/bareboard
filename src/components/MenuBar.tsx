@@ -154,6 +154,7 @@ export function buildMenus(o: {
   toggleLayer: (k: keyof Layers) => void;
   setTheme: (t: Theme) => void;
   openOptions: () => void;
+  showGuide: () => void;
   showKeys: () => void;
   showRe: () => void;
   about: () => void;
@@ -242,6 +243,7 @@ export function buildMenus(o: {
     {
       label: 'Help',
       items: [
+        { label: 'Component & parts guide', onSelect: o.showGuide },
         { label: 'Gestures & keys', onSelect: o.showKeys },
         { label: 'Reverse engineering notes', onSelect: o.showRe },
         { separator: true },

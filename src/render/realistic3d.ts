@@ -1,7 +1,7 @@
 import type { Board, Layers, Part, Pin, Point, Selection, Side } from '../types';
 import type { BoardIndex } from '../lib/search';
 import type { Palette } from '../lib/theme';
-import type { Transform, View } from '../lib/geometry';
+import { pointInPolygon, type Transform, type View } from '../lib/geometry';
 
 export type RenderMode = 'cad' | 'realistic' | '3d';
 
@@ -65,12 +65,12 @@ export function classifyPartPackage(part: Part): PackageSpec {
 
   if (
     (p0 === 'C' || (p0 === 'P' && p1 === 'C'))
-    && ((part.expanse && part.expanse > 90) || part.type === 'through' || name.startsWith('CE') || (part.side === 'bottom' && longSide >= 180))
+    && ((part.expanse && part.expanse > 90) || name.startsWith('CE') || name.startsWith('EC') || name.startsWith('CP') || (part.type === 'through' && longSide >= 100 && pinCount === 2))
   ) {
-    // Standing Radial Electrolytic / Polymer Aluminum Can (1:1 real physical proportions)
+    // Standing Radial Electrolytic / Polymer Aluminum Can (real ~1:1 can proportions)
     spec = {
       kind: 'electrolytic',
-      heightMil: Math.min(320, Math.max(135, longSide * 0.95)),
+      heightMil: Math.min(260, Math.max(110, Math.min(shortSide, longSide) * 0.92)),
       bodyTop: '#e2e8f0',
       bodySide: '#1e293b',
       bodyStroke: '#64748b',
@@ -78,10 +78,11 @@ export function classifyPartPackage(part: Part): PackageSpec {
       hasEndCaps: false,
       showLabelAtAllZooms: true,
     };
-  } else if ((p0 === 'C' || (p0 === 'P' && p1 === 'C')) && longSide >= 260 && pinCount === 2) {
+  } else if ((p0 === 'C' || (p0 === 'P' && p1 === 'C')) && longSide >= 252 && pinCount === 2) {
+    // Molded SMD Tantalum / Polymer Bulk Capacitor (Case A/B/C/D/V: 1.6-3.0 mm height)
     spec = {
       kind: 'tantalum',
-      heightMil: Math.min(95, Math.max(48, shortSide * 0.68)),
+      heightMil: Math.min(115, Math.max(46, shortSide * 0.62)),
       bodyTop: '#eab308',
       bodySide: '#ca8a04',
       bodyStroke: '#854d0e',
@@ -91,10 +92,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'C' || (p0 === 'P' && p1 === 'C')) {
-    // SMD Ceramic MLCC Capacitor (warm golden-tan ceramic dielectric + bright silver end-caps)
+    // SMD Ceramic MLCC Capacitor (JEDEC 0201 ~10 mil through 1210 ~76 mil)
     spec = {
       kind: 'mlcc',
-      heightMil: Math.min(72, Math.max(24, shortSide * 0.72)),
+      heightMil: Math.min(78, Math.max(10, shortSide * 0.78)),
       bodyTop: '#d48c46',
       bodySide: '#a36629',
       bodyStroke: '#6b4218',
@@ -104,10 +105,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'R' || (p0 === 'P' && p1 === 'R')) {
-    // SMD Chip Resistor (coal-black resistive glaze + dark slate ceramic body + bright silver end-caps)
+    // SMD Chip Resistor (low-profile thick film: 0201 ~9 mil through 1206 ~28 mil)
     spec = {
       kind: 'resistor',
-      heightMil: Math.min(48, Math.max(18, shortSide * 0.48)),
+      heightMil: Math.min(30, Math.max(9, shortSide * 0.50)),
       bodyTop: '#161b22',
       bodySide: '#3b424f',
       bodyStroke: '#475569',
@@ -117,13 +118,16 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'L' || (p0 === 'P' && p1 === 'L') || name.startsWith('FB') || name.startsWith('FL')) {
-    // Standing Toroid / Ferrite Drum Power Inductor Coil
+    // Molded Alloy SMD Power Inductor vs Ferrite Bead vs Through-Hole Drum Coil
     const isPowerCoil = !name.startsWith('FB') && (longSide > 65 || pinCount >= 2);
+    const isOpenDrum = part.type === 'through' && longSide >= 110;
     spec = {
       kind: 'inductor',
-      heightMil: isPowerCoil
-        ? Math.min(210, Math.max(90, shortSide * 0.85))
-        : Math.min(56, Math.max(22, shortSide * 0.58)),
+      heightMil: isOpenDrum
+        ? Math.min(190, Math.max(85, shortSide * 0.72))
+        : isPowerCoil
+          ? Math.min(125, Math.max(30, shortSide * 0.45))
+          : Math.min(36, Math.max(11, shortSide * 0.62)),
       bodyTop: '#2d3540',
       bodySide: '#1c2128',
       bodyStroke: '#64748b',
@@ -135,7 +139,7 @@ export function classifyPartPackage(part: Part): PackageSpec {
   } else if (name.startsWith('LED')) {
     spec = {
       kind: 'led',
-      heightMil: Math.min(85, Math.max(32, shortSide * 0.7)),
+      heightMil: Math.min(60, Math.max(18, shortSide * 0.52)),
       bodyTop: '#f8fafc',
       bodySide: '#cbd5e1',
       bodyStroke: '#94a3b8',
@@ -147,7 +151,7 @@ export function classifyPartPackage(part: Part): PackageSpec {
   } else if (p0 === 'D' || (p0 === 'P' && p1 === 'D') || name.startsWith('ZD')) {
     spec = {
       kind: 'diode',
-      heightMil: Math.min(68, Math.max(26, shortSide * 0.62)),
+      heightMil: Math.min(75, Math.max(14, shortSide * 0.52)),
       bodyTop: '#1b2028',
       bodySide: '#10141a',
       bodyStroke: '#64748b',
@@ -157,13 +161,13 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'Q' || (p0 === 'P' && p1 === 'Q') || p0 === 'T') {
-    // Standing TO-220 / through-hole MOSFET vs flat SMD power FET / SOT
-    const isStandingTo220 = part.type === 'through' || (pinCount === 3 && longSide >= 160);
+    // Standing TO-220 / through-hole MOSFET (3 inline wide-pitch pins) vs low-profile SMD PowerPAK / DFN / SOT MOSFET (~0.8-1.1 mm)
+    const isInlineThroughTo220 = pinCount === 3 && shortSide <= 95 && longSide >= 190 && (part.type === 'through' || longSide >= 220);
     spec = {
       kind: 'transistor',
-      heightMil: isStandingTo220
-        ? Math.min(420, Math.max(165, longSide * 1.45))
-        : Math.min(68, Math.max(24, shortSide * 0.52)),
+      heightMil: isInlineThroughTo220
+        ? Math.min(390, Math.max(165, longSide * 1.40))
+        : Math.min(44, Math.max(18, shortSide * 0.34)),
       bodyTop: '#1e242d',
       bodySide: '#11161d',
       bodyStroke: '#64748b',
@@ -173,10 +177,19 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: true,
     };
   } else if (p0 === 'J' || name.startsWith('CN') || name.startsWith('CON') || name.startsWith('USB') || name.startsWith('HDMI')) {
-    // Board-to-Board / Pin Header / FPC Connector
+    // Low-profile laptop FPC/B2B connectors vs SMD ports vs Through-Hole shrouded pin headers
+    const pinDensityPitch = pinCount > 1 ? longSide / Math.max(1, pinCount - 1) : shortSide;
+    const isFineSmdHeader = part.type !== 'through' && (pinCount >= 10 || pinDensityPitch < 45);
+    const isWideIoCage = shortSide >= 230 && pinCount >= 6;
     spec = {
       kind: 'connector',
-      heightMil: Math.min(340, Math.max(120, shortSide * 1.15)),
+      heightMil: isWideIoCage
+        ? Math.min(150, Math.max(64, shortSide * 0.34))
+        : part.type === 'through'
+          ? Math.min(200, Math.max(115, shortSide * 0.80))
+          : isFineSmdHeader
+            ? Math.min(82, Math.max(34, shortSide * 0.34))
+            : Math.min(140, Math.max(48, shortSide * 0.38)),
       bodyTop: '#334155',
       bodySide: '#475569',
       bodyStroke: '#cbd5e1',
@@ -186,10 +199,12 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: true,
     };
   } else if (p0 === 'Y' || p0 === 'X' || name.startsWith('XTAL') || name.startsWith('OSC')) {
-    // Standing HC-49 / SMD Quartz Crystal Can
+    // Standing HC-49 crystal vs low-profile SMD quartz crystal
     spec = {
       kind: 'crystal',
-      heightMil: Math.min(130, Math.max(48, shortSide * 0.75)),
+      heightMil: part.type === 'through'
+        ? Math.min(140, Math.max(75, shortSide * 0.65))
+        : Math.min(58, Math.max(20, shortSide * 0.44)),
       bodyTop: '#e2e8f0',
       bodySide: '#94a3b8',
       bodyStroke: '#eab308',
@@ -201,7 +216,7 @@ export function classifyPartPackage(part: Part): PackageSpec {
   } else if (p0 === 'F' && !name.startsWith('FB') && !name.startsWith('FL')) {
     spec = {
       kind: 'fuse',
-      heightMil: Math.min(54, Math.max(22, shortSide * 0.55)),
+      heightMil: Math.min(46, Math.max(14, shortSide * 0.46)),
       bodyTop: '#f8fafc',
       bodySide: '#cbd5e1',
       bodyStroke: '#ca8a04',
@@ -211,12 +226,12 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'U' || (p0 === 'P' && p1 === 'U') || name.startsWith('IC')) {
-    const isBga = pinCount >= 24 && shortSide > 140;
+    const isBga = pinCount >= 25 && (shortSide >= 165 || pinCount >= 40);
     spec = {
       kind: isBga ? 'bga' : 'ic',
       heightMil: isBga
-        ? Math.min(110, Math.max(54, Math.sqrt(longSide * shortSide) * 0.11))
-        : Math.min(95, Math.max(48, shortSide * 0.28)),
+        ? Math.min(88, Math.max(24, Math.sqrt(longSide * shortSide) * 0.095))
+        : Math.min(68, Math.max(22, shortSide * 0.24)),
       bodyTop: isBga ? '#111827' : '#1e242d',
       bodySide: isBga ? '#15803d' : '#11151c',
       bodyStroke: isBga ? '#22c55e' : '#64748b',
@@ -228,7 +243,7 @@ export function classifyPartPackage(part: Part): PackageSpec {
   } else {
     spec = {
       kind: 'generic',
-      heightMil: Math.min(64, Math.max(26, shortSide * 0.5)),
+      heightMil: Math.min(54, Math.max(16, shortSide * 0.38)),
       bodyTop: '#252b34',
       bodySide: '#151920',
       bodyStroke: '#64748b',
@@ -1497,9 +1512,10 @@ function drawStandingMosfet3D(
   return { roofPts: bodyRes.roofPts, labelQuad };
 }
 
-/** Draws a true hollow 3D Shrouded Box Header / Connector (`J...`):
- *  - Exact longitudinal pin spacing along connector slot centerline (never shrunk toward center)
- *  - View-space outward-normal wall culling for outer shroud walls, recessed cavity pocket, and U-bezel keyway */
+/** Draws an authentic 3D Connector (`J...`) matched to its real physical style:
+ *  - Through-hole vertical shrouded box headers (`J1`): hollow cavity with true `(pin.x, pin.y)` gold pins
+ *  - Fine-pitch SMD FPC/Mezzanine sockets (`J4800`): low-profile plastic frame + flush gold contact fingers
+ *  - Wide SMD Edge I/O Receptacles (`J4400`, `J4600`, `J3200`): closed brushed-steel RF shield + outward front port mouth */
 function drawConnector3D(
   ctx: CanvasRenderingContext2D,
   board: Board,
@@ -1513,13 +1529,146 @@ function drawConnector3D(
   focused: boolean,
   xrayAlpha: number,
   palette: Palette,
-): ProjectedPoint[] {
+): { roofPts: ProjectedPoint[]; floatLabel: boolean } {
   const P = proj.project3D;
   const outer = orientQuadToEnds(polyWorld);
-  const cavity = insetQuad(outer, 0.08, 0.24);
+  const edgeShort = Math.hypot(outer[1].x - outer[0].x, outer[1].y - outer[0].y);
+  const edgeLong = Math.hypot(outer[3].x - outer[0].x, outer[3].y - outer[0].y);
+  const shortDim = Math.min(edgeShort, edgeLong);
+  const longDim = Math.max(edgeShort, edgeLong);
+  const pinCount = Math.max(0, part.pinEnd - part.pinStart);
+
+  // Detect whether any outer wall faces outside the PCB perimeter (edge I/O port like USB/HDMI/SD/mDP)
+  let touchesBoardEdge = false;
+  if (board.outline.length >= 3) {
+    const cWorld = {
+      x: (outer[0].x + outer[2].x) * 0.5,
+      y: (outer[0].y + outer[2].y) * 0.5,
+    };
+    for (let k = 0; k < 4; k++) {
+      const mid = lerpPt(outer[k], outer[(k + 1) % 4], 0.5);
+      const nx = mid.x - cWorld.x;
+      const ny = mid.y - cWorld.y;
+      const nLen = Math.hypot(nx, ny) || 1;
+      const probe = { x: mid.x + (nx / nLen) * 35, y: mid.y + (ny / nLen) * 35 };
+      if (!pointInPolygon(probe, board.outline)) {
+        touchesBoardEdge = true;
+        break;
+      }
+    }
+  }
+
+  // Classify physical connector housing style from mount type, edge placement & real geometry
+  const isThroughHeader = part.type === 'through';
+  const isWideIoPort = shortDim >= 170 && (!isThroughHeader || touchesBoardEdge || shortDim >= 230);
+
+  if (isWideIoPort) {
+    // Closed brushed-steel / aluminum shielded I/O receptacle (USB-A, MiniDP/Thunderbolt, SD card, HDMI, MagSafe)
+    const zRoof = zBase + zSign * heightMil;
+    const strokeCol = selected ? palette.selectionRing : focused ? palette.active : '#94a3b8';
+    const { basePts, roofPts } = drawExtrudedPrism3D(
+      ctx,
+      outer,
+      zBase,
+      zRoof,
+      proj,
+      '#64748b',
+      '#475569',
+      strokeCol,
+      xrayAlpha,
+      '#334155',
+      '#475569',
+    );
+
+    // Subtle stamped RF shield recess border on the metal top roof
+    const rCenter = {
+      vx: (roofPts[0].vx + roofPts[1].vx + roofPts[2].vx + roofPts[3].vx) * 0.25,
+      vy: (roofPts[0].vy + roofPts[1].vy + roofPts[2].vy + roofPts[3].vy) * 0.25,
+      vz: (roofPts[0].vz + roofPts[1].vz + roofPts[2].vz + roofPts[3].vz) * 0.25,
+    };
+    const bCenter = {
+      vx: (basePts[0].vx + basePts[1].vx + basePts[2].vx + basePts[3].vx) * 0.25,
+      vy: (basePts[0].vy + basePts[1].vy + basePts[2].vy + basePts[3].vy) * 0.25,
+      vz: (basePts[0].vz + basePts[1].vz + basePts[2].vz + basePts[3].vz) * 0.25,
+    };
+    if (rCenter.vz <= bCenter.vz) {
+      const stamp = insetQuad(roofPts, 0.08, 0.10);
+      ctx.save();
+      ctx.globalAlpha *= xrayAlpha;
+      ctx.beginPath();
+      stamp.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.45)';
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Draw dark recessed horizontal port mouth on any wall facing outside the board outline
+    if (board.outline.length >= 3) {
+      const cWorld = {
+        x: (outer[0].x + outer[2].x) * 0.5,
+        y: (outer[0].y + outer[2].y) * 0.5,
+      };
+      const interior = {
+        vx: (rCenter.vx + bCenter.vx) * 0.5,
+        vy: (rCenter.vy + bCenter.vy) * 0.5,
+        vz: (rCenter.vz + bCenter.vz) * 0.5,
+      };
+      for (let k = 0; k < 4; k++) {
+        const next = (k + 1) % 4;
+        const a = outer[k];
+        const b = outer[next];
+        const mid = lerpPt(a, b, 0.5);
+        const nx = mid.x - cWorld.x;
+        const ny = mid.y - cWorld.y;
+        const nLen = Math.hypot(nx, ny) || 1;
+        const probe = { x: mid.x + (nx / nLen) * 35, y: mid.y + (ny / nLen) * 35 };
+        if (pointInPolygon(probe, board.outline)) continue;
+
+        const wInfo = faceViewInfo([basePts[k], basePts[next], roofPts[next], roofPts[k]], interior, proj.camDist);
+        if (!wInfo.front) continue;
+        const zMouthBot = zBase + zSign * (heightMil * 0.16);
+        const zMouthTop = zBase + zSign * (heightMil * 0.84);
+        const ma = lerpPt(a, b, 0.10);
+        const mb = lerpPt(a, b, 0.90);
+        const mouthPts = [P(ma, zMouthBot), P(mb, zMouthBot), P(mb, zMouthTop), P(ma, zMouthTop)];
+        ctx.save();
+        ctx.globalAlpha *= xrayAlpha;
+        ctx.beginPath();
+        mouthPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+        ctx.closePath();
+        ctx.fillStyle = '#0b0f16';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(203, 213, 225, 0.65)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+
+        // Thin central tongue + gold contact pins deep inside horizontal port mouth
+        const zTongue = zBase + zSign * (heightMil * 0.48);
+        const tA = P(lerpPt(a, b, 0.22), zTongue);
+        const tB = P(lerpPt(a, b, 0.78), zTongue);
+        ctx.strokeStyle = '#ca8a04';
+        ctx.lineWidth = Math.max(1.4, Math.hypot(mouthPts[3].x - mouthPts[0].x, mouthPts[3].y - mouthPts[0].y) * 0.16);
+        ctx.beginPath();
+        ctx.moveTo(tA.x, tA.y);
+        ctx.lineTo(tB.x, tB.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    return { roofPts, floatLabel: false };
+  }
+
+  // Hollow Top-Opening Connector: Through-Hole Box Header (`J1`) or Low-Profile SMD FPC/B2B Socket (`J4800`)
+  const wallT = isThroughHeader ? 0.22 : Math.min(0.24, Math.max(0.14, 14 / Math.max(40, shortDim)));
+  const cavity = insetQuad(outer, Math.min(0.12, Math.max(0.05, 16 / Math.max(60, longDim))), wallT);
   const zRoof = zBase + zSign * heightMil;
-  const zFloor = zBase + zSign * (heightMil * 0.34);
-  const zPinTip = zRoof - zSign * Math.min(8, heightMil * 0.04);
+  const zFloor = zBase + zSign * (isThroughHeader ? Math.min(20, heightMil * 0.22) : heightMil * 0.42);
+  const zPinTip = isThroughHeader
+    ? zRoof - zSign * Math.min(8, heightMil * 0.08)
+    : zFloor + zSign * Math.max(4, (zRoof - zBase) * zSign * 0.34);
 
   const oBase = outer.map((pt) => P(pt, zBase));
   const oRoof = outer.map((pt) => P(pt, zRoof));
@@ -1567,7 +1716,7 @@ function drawConnector3D(
     fillWallPts(w.quad, shadeHex(w.k === 0 || w.k === 2 ? '#2c3543' : '#364152', w.lit));
   }
 
-  // Dark recessed cavity floor & visible inner cavity walls (front side looking into center)
+  // Dark recessed cavity floor & visible inner cavity walls
   ctx.beginPath();
   cFloor.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
   ctx.closePath();
@@ -1592,24 +1741,25 @@ function drawConnector3D(
     fillWallPts(iw.quad, shadeHex('#141a22', iw.lit), 'rgba(0,0,0,0.45)');
   }
 
-  // 3D Gold-plated header pins preserving exact longitudinal pin pitch along cavity centerline
-  const pinCount = Math.max(0, part.pinEnd - part.pinStart);
-  if (pinCount > 0 && pinCount <= 60) {
+  // Internal 3D gold contacts placed at true `(pin.x, pin.y)` coordinates clamped within inner cavity bounds (never squished by 0.65)
+  if (pinCount > 0 && pinCount <= 80) {
     const cavMidA = lerpPt(cavity[0], cavity[1], 0.5);
     const cavMidB = lerpPt(cavity[3], cavity[2], 0.5);
     const cavCenter = lerpPt(cavMidA, cavMidB, 0.5);
     const ldx = cavMidB.x - cavMidA.x, ldy = cavMidB.y - cavMidA.y;
     const lLen = Math.hypot(ldx, ldy) || 1;
+    const wCavLen = Math.hypot(cavity[1].x - cavity[0].x, cavity[1].y - cavity[0].y);
     const uL = { x: ldx / lLen, y: ldy / lLen };
     const uS = { x: -uL.y, y: uL.x };
-    const halfCavL = Math.max(8, lLen * 0.5 - 10);
+    const halfCavL = Math.max(4, lLen * 0.5 - 4);
+    const halfCavS = Math.max(2, wCavLen * 0.5 - 3);
 
     const pinObjs: { pBot: ProjectedPoint; pTop: ProjectedPoint; d: number }[] = [];
     for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
       const pin = board.pins[pIdx];
       const rx = pin.x - cavCenter.x, ry = pin.y - cavCenter.y;
       const alongL = Math.max(-halfCavL, Math.min(halfCavL, rx * uL.x + ry * uL.y));
-      const acrossS = (rx * uS.x + ry * uS.y) * 0.65;
+      const acrossS = Math.max(-halfCavS, Math.min(halfCavS, rx * uS.x + ry * uS.y));
       const insidePin = {
         x: cavCenter.x + uL.x * alongL + uS.x * acrossS,
         y: cavCenter.y + uL.y * alongL + uS.y * acrossS,
@@ -1620,18 +1770,18 @@ function drawConnector3D(
     }
     pinObjs.sort((a, b) => b.d - a.d);
     const cavW = Math.hypot(cRoof[1].x - cRoof[0].x, cRoof[1].y - cRoof[0].y);
-    const pinW = Math.min(3.8, Math.max(1.6, cavW * 0.14));
+    const pinW = Math.min(3.4, Math.max(1.2, cavW * 0.12));
     ctx.lineCap = 'butt';
     for (const { pBot, pTop } of pinObjs) {
       ctx.strokeStyle = '#a16207';
-      ctx.lineWidth = pinW + 0.6;
+      ctx.lineWidth = pinW + 0.5;
       ctx.beginPath();
       ctx.moveTo(pBot.x, pBot.y);
       ctx.lineTo(pTop.x, pTop.y);
       ctx.stroke();
 
       ctx.strokeStyle = '#fde047';
-      ctx.lineWidth = Math.max(1.0, pinW * 0.58);
+      ctx.lineWidth = Math.max(0.9, pinW * 0.6);
       ctx.beginPath();
       ctx.moveTo(pBot.x, pBot.y);
       ctx.lineTo(pTop.x, pTop.y);
@@ -1639,12 +1789,11 @@ function drawConnector3D(
     }
   }
 
-  // Front exterior housing walls (naturally occlude the internal pins!)
+  // Front exterior housing walls (naturally occlude internal contacts)
   for (const w of frontOuter) {
     fillWallPts(w.quad, shadeHex(w.k === 0 || w.k === 2 ? '#374151' : '#475569', w.lit));
   }
 
-  // Hollow top U-shaped plastic shroud rim + polarization keyway notch
   const strokeCol = selected ? palette.selectionRing : focused ? palette.active : '#94a3b8';
   if (roofInfo.front) {
     ctx.beginPath();
@@ -1664,7 +1813,7 @@ function drawConnector3D(
     const notchA = P(lerpPt(lerpPt(outer[0], outer[3], 0.36), lerpPt(outer[1], outer[2], 0.08), 0.5), zRoof);
     const notchB = P(lerpPt(lerpPt(outer[0], outer[3], 0.64), lerpPt(outer[1], outer[2], 0.08), 0.5), zRoof);
     ctx.strokeStyle = '#090d12';
-    ctx.lineWidth = 2.6;
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.moveTo(notchA.x, notchA.y);
     ctx.lineTo(notchB.x, notchB.y);
@@ -1674,7 +1823,7 @@ function drawConnector3D(
   }
 
   ctx.restore();
-  return oRoof;
+  return { roofPts: oRoof, floatLabel: true };
 }
 
 /** Draws a 3D Orientation Compass Gizmo in the top-right corner of the 3D viewport. */
@@ -2002,7 +2151,7 @@ export function renderBoard3D(
       const polyWorld = spec.hasEndCaps
         ? insetQuad(orientedRaw, 0.02, 0.08)
         : spec.kind === 'ic'
-          ? insetQuad(orientedRaw, 0.14, 0.14)
+          ? insetQuad(orientedRaw, 0.09, 0.09)
           : orientedRaw;
 
       const zBodyBot = spec.kind === 'ic' ? zBase + zSign * Math.max(4, spec.heightMil * 0.14) : zBase;
@@ -2145,13 +2294,13 @@ export function renderBoard3D(
         continue;
       }
 
-      // --- 2. HOLLOW 3D SHROUDED HEADER / CONNECTOR (`connector`) ---
+      // --- 2. 3D CONNECTOR / SHIELDED EDGE PORT / FPC HEADER (`connector`) ---
       if (spec.kind === 'connector' && screenSize >= 8) {
-        roofPts = drawConnector3D(
+        const res = drawConnector3D(
           ctx, board, part, polyWorld, zBase, zSign, spec.heightMil,
           proj, selected, focused, xrayAlpha, palette,
         );
-        renderRoofLabel(roofPts, true);
+        renderRoofLabel(res.roofPts, res.floatLabel);
         ctx.restore();
         continue;
       }
@@ -2168,9 +2317,10 @@ export function renderBoard3D(
         };
         const edgeA = Math.hypot(polyWorld[1].x - polyWorld[0].x, polyWorld[1].y - polyWorld[0].y);
         const edgeB = Math.hypot(polyWorld[2].x - polyWorld[1].x, polyWorld[2].y - polyWorld[1].y);
+        const maxSafeR = Math.min(edgeA, edgeB) * 0.46;
         const worldR = part.expanse
-          ? part.expanse * 0.36
-          : Math.min(115, Math.max(Math.min(edgeA, edgeB) * 0.44, Math.max(edgeA, edgeB) * 0.35));
+          ? Math.min(maxSafeR, part.expanse * 0.36)
+          : Math.min(108, maxSafeR);
 
         const strokeCan = selected ? palette.selectionRing : focused ? palette.active : '#64748b';
         drawCylinder3D(
@@ -2195,9 +2345,9 @@ export function renderBoard3D(
           lerpPt(q[0], q[3], t1),
         ];
 
-        const zFilletTop = zBase + zSign * Math.max(4, (zRoof - zBase) * zSign * 0.30);
-        const filletL = sliceQuad(polyWorld, -0.05, 0.04);
-        const filletR = sliceQuad(polyWorld, 0.96, 1.05);
+        const zFilletTop = zBase + zSign * Math.max(3, (zRoof - zBase) * zSign * 0.28);
+        const filletL = sliceQuad(polyWorld, 0, 0.055);
+        const filletR = sliceQuad(polyWorld, 0.945, 1);
         if (screenSize >= 9) {
           const filDepthL = P(lerpPt(filletL[0], filletL[2], 0.5), zBase).depth;
           const filDepthR = P(lerpPt(filletR[0], filletR[2], 0.5), zBase).depth;
@@ -2426,16 +2576,33 @@ export function renderBoard3D(
         };
         const e01 = Math.hypot(polyWorld[1].x - polyWorld[0].x, polyWorld[1].y - polyWorld[0].y);
         const e12 = Math.hypot(polyWorld[2].x - polyWorld[1].x, polyWorld[2].y - polyWorld[1].y);
-        const worldR = Math.min(e01, e12) * 0.34;
-        if (worldR * view.scale >= 3) {
-          const zDrumTop = zBase + zSign * (spec.heightMil * 1.24);
+        const isOpenDrum = part.type === 'through' && Math.max(e01, e12) >= 110;
+        const worldR = Math.min(e01, e12) * 0.32;
+        if (isOpenDrum && worldR * view.scale >= 3) {
+          const zDrumTop = zBase + zSign * (spec.heightMil * 1.08);
           drawCylinder3D(
             ctx, centerWorld, worldR, zRoof, zDrumTop, proj,
             '#b45309', '#1e242d', '#f59e0b', xrayAlpha,
             { rimStroke: '#f59e0b' },
           );
+        } else if (worldR * view.scale >= 4) {
+          // Subtle recessed ferrite drum groove flush on shielded SMD alloy choke roof
+          const ringPts: ProjectedPoint[] = [];
+          for (let s = 0; s < 20; s++) {
+            const a = (s / 20) * Math.PI * 2;
+            ringPts.push(P({ x: centerWorld.x + Math.cos(a) * worldR, y: centerWorld.y + Math.sin(a) * worldR }, zRoof));
+          }
+          ctx.save();
+          ctx.globalAlpha *= xrayAlpha;
+          ctx.beginPath();
+          ringPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+          ctx.closePath();
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.38)';
+          ctx.lineWidth = 1.1;
+          ctx.stroke();
+          ctx.restore();
         }
-      } else if (spec.kind === 'ic' && part.pinStart < board.pins.length && screenSize >= 10) {
+      } else if ((spec.kind === 'ic' || spec.kind === 'transistor') && part.pinStart < board.pins.length && screenSize >= 10) {
         const bevel = insetQuad(roofPts, 0.05, 0.05);
         ctx.save();
         ctx.beginPath();
@@ -2445,7 +2612,7 @@ export function renderBoard3D(
         ctx.lineWidth = 0.85;
         ctx.stroke();
 
-        // Pin-1 recessed mold crater neatly placed in Pin-1 corner (away from center chip label!)
+        // Pin-1 recessed mold crater neatly placed in Pin-1 corner (away from center label!)
         const sp1 = P(board.pins[part.pinStart], zRoof);
         let bestCorner = 0;
         let bestDist = Infinity;

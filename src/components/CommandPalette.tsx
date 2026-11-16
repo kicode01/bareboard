@@ -3,6 +3,7 @@ import type { Board, Selection } from '../types';
 import { search, type BoardIndex, type NetInfo } from '../lib/search';
 import type { Theme } from '../lib/theme';
 import { classifyPartPackage, type RenderMode } from '../render/realistic3d';
+import { describeNet, getPackageMeta } from '../lib/packages';
 import { MaterialIcon, type MaterialIconName } from './MaterialIcon';
 import { PackageGlyph } from './PackageGlyph';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,7 @@ interface CommandPaletteProps {
   onOpenFile: () => void;
   onOpenOptions: () => void;
   onOpenKeys: () => void;
+  onOpenGuide: () => void;
 }
 
 export function CommandPalette({
@@ -59,6 +61,7 @@ export function CommandPalette({
   onOpenFile,
   onOpenOptions,
   onOpenKeys,
+  onOpenGuide,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
 
@@ -161,6 +164,13 @@ export function CommandPalette({
         run: onOpenOptions,
       },
       {
+        id: 'act-guide',
+        label: 'Component & abbreviation guide (Parts Legend)',
+        shortcut: '',
+        icon: 'memory',
+        run: onOpenGuide,
+      },
+      {
         id: 'act-keys',
         label: 'Keyboard & touch gestures reference',
         shortcut: '',
@@ -183,6 +193,7 @@ export function CommandPalette({
     onToggleTheme,
     onOpenFile,
     onOpenOptions,
+    onOpenGuide,
     onOpenKeys,
   ]);
 
@@ -221,6 +232,7 @@ export function CommandPalette({
               {partHits.map((h) => {
                 const part = board.parts[h.index];
                 const spec = part ? classifyPartPackage(part) : null;
+                const meta = spec ? getPackageMeta(spec.kind) : null;
                 return (
                   <CommandItem
                     key={`part-${h.index}-${h.label}`}
@@ -229,12 +241,17 @@ export function CommandPalette({
                   >
                     {spec ? <PackageGlyph kind={spec.kind} /> : <Badge variant="top">PART</Badge>}
                     <span className="font-medium text-foreground">{h.label}</span>
+                    {meta && (
+                      <span className="truncate text-[11px] text-muted-foreground">{meta.friendly}</span>
+                    )}
                     {part && (
                       <Badge variant={part.side === 'bottom' ? 'bottom' : 'top'} className="ml-1">
                         {part.side === 'bottom' ? 'Bot' : part.side === 'both' ? 'Both' : 'Top'}
                       </Badge>
                     )}
-                    <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">{h.sub}</span>
+                    <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+                      {part ? `${part.pinEnd - part.pinStart}p` : h.sub}
+                    </span>
                   </CommandItem>
                 );
               })}
@@ -243,35 +260,50 @@ export function CommandPalette({
 
           {board && query.trim() && netHits.length > 0 && (
             <CommandGroup heading={`Nets (${netHits.length})`}>
-              {netHits.map((h) => (
-                <CommandItem
-                  key={`net-${h.label}`}
-                  value={`net:${h.label}`}
-                  onSelect={() => runAndClose(() => onSelectNet(h.label))}
-                >
-                  <MaterialIcon name="hub" size={15} className="text-muted-foreground" />
-                  <span className="truncate font-medium text-foreground">{h.label}</span>
-                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">{h.sub}</span>
-                </CommandItem>
-              ))}
+              {netHits.map((h) => {
+                const netMeta = describeNet(h.label);
+                const netInfo = netList.find((n) => n.name === h.label);
+                return (
+                  <CommandItem
+                    key={`net-${h.label}`}
+                    value={`net:${h.label}`}
+                    onSelect={() => runAndClose(() => onSelectNet(h.label))}
+                  >
+                    <MaterialIcon name="hub" size={15} className="text-amber-600 dark:text-amber-400" />
+                    <span className="shrink-0 font-medium text-foreground">{h.label}</span>
+                    {netMeta && (
+                      <span className="truncate text-[11px] text-muted-foreground">{netMeta.friendly}</span>
+                    )}
+                    <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {netInfo ? `${netInfo.pinIndices.length} pins, ${netInfo.partIds.size} parts` : h.sub}
+                    </span>
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           )}
 
           {board && !query.trim() && netList.length > 0 && (
             <CommandGroup heading="Top Nets on Board">
-              {netList.slice(0, 8).map((n) => (
-                <CommandItem
-                  key={`topnet-${n.name}`}
-                  value={`net:${n.name}`}
-                  onSelect={() => runAndClose(() => onSelectNet(n.name))}
-                >
-                  <MaterialIcon name="hub" size={15} className="text-muted-foreground" />
-                  <span className="truncate font-medium text-foreground">{n.name}</span>
-                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                    {n.pinIndices.length} pins, {n.partIds.size} parts
-                  </span>
-                </CommandItem>
-              ))}
+              {netList.slice(0, 8).map((n) => {
+                const netMeta = describeNet(n.name);
+                return (
+                  <CommandItem
+                    key={`topnet-${n.name}`}
+                    value={`net:${n.name}`}
+                    onSelect={() => runAndClose(() => onSelectNet(n.name))}
+                  >
+                    <MaterialIcon name="hub" size={15} className="text-amber-600 dark:text-amber-400" />
+                    <span className="shrink-0 font-medium text-foreground">{n.name}</span>
+                    {netMeta && (
+                      <span className="truncate text-[11px] text-muted-foreground">{netMeta.friendly}</span>
+                    )}
+                    <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {n.pinIndices.length} pins, {n.partIds.size} parts
+                    </span>
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           )}
 

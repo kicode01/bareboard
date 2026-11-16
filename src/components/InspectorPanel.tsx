@@ -2,14 +2,20 @@ import { useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Board, Selection } from '../types';
 import type { NetInfo } from '../lib/search';
-import { classifyPartPackage } from '../render/realistic3d';
+import { classifyPartPackage, type PackageKind } from '../render/realistic3d';
+import { describeNet, formatMountType, getPackageMeta } from '../lib/packages';
 import { MaterialIcon } from '@/components/MaterialIcon';
-import { PackageGlyph, packageShortLabel } from './PackageGlyph';
+import { PackageGlyph } from './PackageGlyph';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const mm = (mil: number) => (mil * 0.0254).toFixed(2);
+
+export interface PackageBreakdownEntry {
+  kind: PackageKind;
+  count: number;
+}
 
 interface InspectorPanelProps {
   board: Board | null;
@@ -21,7 +27,7 @@ interface InspectorPanelProps {
   topPinCount: number;
   botPinCount: number;
   netCount: number;
-  packageCounts: [string, number][];
+  packageCounts: PackageBreakdownEntry[];
   pinFilter: string;
   onPinFilterChange: (q: string) => void;
   isPhone: boolean;
@@ -29,6 +35,8 @@ interface InspectorPanelProps {
   onHighlightNet: (net: string) => void;
   onFitNet: (net: string) => void;
   onCenterSelection: () => void;
+  onFilterByKind?: (term: string) => void;
+  onOpenGuide: () => void;
   onOpenKeys: () => void;
   onOpenReNotes: () => void;
   onOpenAbout: () => void;
@@ -54,6 +62,8 @@ export function InspectorPanel({
   onHighlightNet,
   onFitNet,
   onCenterSelection,
+  onFilterByKind,
+  onOpenGuide,
   onOpenKeys,
   onOpenReNotes,
   onOpenAbout,
@@ -168,19 +178,34 @@ export function InspectorPanel({
 
             {packageCounts.length > 0 && (
               <div className="px-3 py-2.5">
-                <div className="mb-2 text-[11px] font-medium text-muted-foreground">
-                  Package breakdown
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    Components on board
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onOpenGuide}
+                    className="text-[10.5px] font-medium text-primary hover:underline"
+                  >
+                    Parts guide →
+                  </button>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {packageCounts.slice(0, 12).map(([label, count]) => (
-                    <span
-                      className="inline-flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
-                      key={label}
-                    >
-                      <span>{label}</span>
-                      <span className="font-semibold text-foreground">{count}</span>
-                    </span>
-                  ))}
+                  {packageCounts.slice(0, 12).map(({ kind, count }) => {
+                    const meta = getPackageMeta(kind);
+                    return (
+                      <button
+                        type="button"
+                        key={kind}
+                        onClick={() => onFilterByKind?.(meta.friendly)}
+                        title={`${meta.label} (${meta.short}) — ${meta.role}`}
+                        className="inline-flex items-center gap-1 rounded border border-border/70 bg-secondary px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                      >
+                        <span>{meta.friendly}</span>
+                        <span className="font-semibold text-foreground">{count}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -193,6 +218,7 @@ export function InspectorPanel({
 
         {selectedPart && board && (() => {
           const spec = classifyPartPackage(selectedPart);
+          const meta = getPackageMeta(spec.kind);
           const totalPins = selectedPart.pinEnd - selectedPart.pinStart;
           return (
             <div className="detail flex min-h-0 flex-1 flex-col gap-2.5 p-3">
@@ -201,8 +227,10 @@ export function InspectorPanel({
                   <PackageGlyph kind={spec.kind} />
                 </div>
                 <div className="detail-title-col min-w-0 flex-1">
-                  <div className="detail-badges mb-0.5 flex items-center gap-1">
-                    <Badge variant="default" className="badge part">{packageShortLabel(spec.kind)}</Badge>
+                  <div className="detail-badges mb-0.5 flex flex-wrap items-center gap-1">
+                    <Badge variant="default" className="badge part" title={meta.label}>
+                      {meta.friendly} · {meta.short}
+                    </Badge>
                     <Badge variant={selectedPart.side === 'bottom' ? 'bottom' : selectedPart.side === 'both' ? 'both' : 'top'}>
                       {selectedPart.side === 'bottom' ? 'Bottom' : selectedPart.side === 'both' ? 'Both' : 'Top'}
                     </Badge>
@@ -215,9 +243,13 @@ export function InspectorPanel({
                 </Button>
               </div>
 
+              <p className="m-0 rounded-md border border-border/70 bg-secondary/45 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+                {meta.role}
+              </p>
+
               <div className="grid grid-cols-2 divide-x divide-border rounded-md border border-border bg-secondary/40">
                 <StatCell compact label="Pins" value={totalPins} />
-                <StatCell compact label="Mount" value={selectedPart.type.toUpperCase()} />
+                <StatCell compact label="Mount" value={formatMountType(selectedPart.type)} />
               </div>
 
               {selectedPart.box && (
@@ -265,12 +297,18 @@ export function InspectorPanel({
                   <div style={{ height: `${pinVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
                     {pinVirtualizer.getVirtualItems().map((vi) => {
                       const { pin, globalIndex, localNum } = filteredPartPins[vi.index];
-                      const isGnd = pin.net === 'GND' || pin.net === 'GROUND';
-                      const isNc = !pin.net || pin.net === 'UNCONNECTED' || pin.net === 'NC';
+                      const pinNetMeta = describeNet(pin.net);
+                      const isGnd = pinNetMeta?.category === 'ground';
+                      const isNc = pinNetMeta?.category === 'unconnected';
                       return (
                         <button
                           key={vi.key}
                           type="button"
+                          title={
+                            pinNetMeta
+                              ? `Pin ${localNum} → ${pin.net} (${pinNetMeta.badge}): ${pinNetMeta.description}`
+                              : `Pin ${localNum} → ${pin.net}`
+                          }
                           style={{
                             position: 'absolute',
                             top: 0,
@@ -280,12 +318,12 @@ export function InspectorPanel({
                             transform: `translateY(${vi.start}px)`,
                           }}
                           className={cn(
-                            'pin-row flex items-center gap-2 rounded px-2 text-left text-[11.5px] tabular-nums transition-colors hover:bg-secondary',
+                            'pin-row flex items-center gap-1.5 rounded px-2 text-left text-[11.5px] tabular-nums transition-colors hover:bg-secondary',
                             isGnd ? 'is-gnd' : isNc ? 'is-nc' : 'is-sig',
                           )}
                           onClick={() => onSelect({ kind: 'pin', index: globalIndex, key: `pin:${globalIndex}` }, true)}
                         >
-                          <span className="w-9 shrink-0 truncate font-medium text-muted-foreground">{localNum}</span>
+                          <span className="w-8 shrink-0 truncate font-medium text-muted-foreground">{localNum}</span>
                           <span
                             className={cn(
                               'min-w-0 flex-1 truncate font-medium',
@@ -298,9 +336,14 @@ export function InspectorPanel({
                           >
                             {pin.net}
                           </span>
+                          {pinNetMeta && (
+                            <span className="max-w-[92px] shrink-0 truncate text-[10px] text-muted-foreground">
+                              {pinNetMeta.friendly}
+                            </span>
+                          )}
                           <span
                             className={cn(
-                              'shrink-0 text-[10.5px] font-medium',
+                              'w-6 shrink-0 text-right text-[10.5px] font-medium',
                               pin.side === 'bottom' ? 'text-indigo-600 dark:text-indigo-400' : 'text-primary',
                             )}
                           >
@@ -316,15 +359,20 @@ export function InspectorPanel({
           );
         })()}
 
-        {selectedPin && board && (
+        {selectedPin && board && (() => {
+          const pinPart = selectedPin.part > 0 ? board.parts[selectedPin.part - 1] : undefined;
+          const pinPartMeta = pinPart && !pinPart.isDummy ? getPackageMeta(classifyPartPackage(pinPart).kind) : null;
+          const pinNetMeta = describeNet(selectedPin.net);
+          return (
           <div className="detail flex flex-col gap-2 p-3">
             <div className="detail-card-head flex items-center gap-2">
               <div className="detail-title-col min-w-0 flex-1">
-                <div className="detail-badges mb-0.5 flex items-center gap-1">
+                <div className="detail-badges mb-0.5 flex flex-wrap items-center gap-1">
                   <Badge variant="default" className="badge pin">Pin</Badge>
                   <Badge variant={selectedPin.side === 'bottom' ? 'bottom' : selectedPin.side === 'both' ? 'both' : 'top'}>
                     {selectedPin.side === 'bottom' ? 'Bottom' : selectedPin.side === 'both' ? 'Both' : 'Top'}
                   </Badge>
+                  {pinNetMeta && <Badge variant="amber">{pinNetMeta.badge}</Badge>}
                 </div>
                 <h2 className="m-0 break-all text-sm font-semibold tabular-nums text-foreground">
                   {selectedPin.name || selectedPin.number || `#${selection!.index + 1}`}
@@ -336,9 +384,15 @@ export function InspectorPanel({
               </Button>
             </div>
 
+            {pinNetMeta && (
+              <p className="m-0 rounded-md border border-border/70 bg-secondary/45 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+                <strong className="font-semibold text-foreground">{selectedPin.net}:</strong> {pinNetMeta.description}
+              </p>
+            )}
+
             <div className="divide-y divide-border/70 border-y border-border/70">
-              <InspRow k="Net" v={selectedPin.net} />
-              {selectedPin.part > 0 && board.parts[selectedPin.part - 1] && !board.parts[selectedPin.part - 1].isDummy ? (
+              <InspRow k="Net" v={pinNetMeta ? `${selectedPin.net} · ${pinNetMeta.friendly}` : selectedPin.net} />
+              {pinPart && !pinPart.isDummy ? (
                 <div className="kv flex items-center justify-between gap-2 py-1.5 text-[11.5px]">
                   <span className="text-muted-foreground">Component</span>
                   <button
@@ -346,7 +400,7 @@ export function InspectorPanel({
                     className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-[11.5px] font-semibold text-primary hover:bg-primary/15"
                     onClick={() => onSelect({ kind: 'part', index: selectedPin.part - 1, key: `part:${selectedPin.part - 1}` }, true)}
                   >
-                    <span>{board.parts[selectedPin.part - 1].name}</span>
+                    <span>{pinPart.name}{pinPartMeta ? ` (${pinPartMeta.friendly})` : ''}</span>
                     <MaterialIcon name="arrow_outward" size={13} />
                   </button>
                 </div>
@@ -362,17 +416,21 @@ export function InspectorPanel({
               <span>Trace net “{selectedPin.net}”</span>
             </Button>
           </div>
-        )}
+          );
+        })()}
 
-        {selectedNail && (
+        {selectedNail && (() => {
+          const nailNetMeta = describeNet(selectedNail.net);
+          return (
           <div className="detail flex flex-col gap-2 p-3">
             <div className="detail-card-head flex items-center gap-2">
               <div className="detail-title-col min-w-0 flex-1">
-                <div className="detail-badges mb-0.5 flex items-center gap-1">
+                <div className="detail-badges mb-0.5 flex flex-wrap items-center gap-1">
                   <Badge variant="violet" className="badge nail">Test point</Badge>
                   <Badge variant={selectedNail.side === 'bottom' ? 'bottom' : selectedNail.side === 'both' ? 'both' : 'top'}>
                     {selectedNail.side === 'bottom' ? 'Bottom' : selectedNail.side === 'both' ? 'Both' : 'Top'}
                   </Badge>
+                  {nailNetMeta && <Badge variant="amber">{nailNetMeta.badge}</Badge>}
                 </div>
                 <h2 className="m-0 text-sm font-semibold tabular-nums text-foreground">
                   #{selectedNail.probe || selection!.index + 1}
@@ -383,18 +441,29 @@ export function InspectorPanel({
                 <span>Center</span>
               </Button>
             </div>
+            {nailNetMeta && (
+              <p className="m-0 rounded-md border border-border/70 bg-secondary/45 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+                <strong className="font-semibold text-foreground">{selectedNail.net}:</strong> {nailNetMeta.description}
+              </p>
+            )}
             <div className="divide-y divide-border/70 border-y border-border/70">
-              <InspRow k="Net" v={selectedNail.net} />
+              <InspRow k="Net" v={nailNetMeta ? `${selectedNail.net} · ${nailNetMeta.friendly}` : selectedNail.net} />
               <InspRow k="Coords" v={`${Math.round(selectedNail.x)}, ${Math.round(selectedNail.y)} mil`} />
             </div>
           </div>
-        )}
+          );
+        })()}
 
-        {activeNet && (
+        {activeNet && (() => {
+          const netMeta = describeNet(activeNet.name);
+          return (
           <div className="net-detail flex flex-col gap-2.5 border-t border-border p-3">
             <div className="detail-card-head flex items-center gap-2">
               <div className="detail-title-col min-w-0 flex-1">
-                <Badge variant="amber" className="badge net mb-0.5">Net</Badge>
+                <div className="mb-0.5 flex flex-wrap items-center gap-1">
+                  <Badge variant="amber" className="badge net">Net</Badge>
+                  {netMeta && <Badge variant="default">{netMeta.badge}</Badge>}
+                </div>
                 <h2 className="m-0 break-all text-sm font-semibold text-foreground">{activeNet.name}</h2>
               </div>
               <Button size="xs" variant="outline" className="focus-btn" onClick={() => onFitNet(activeNet.name)} title="Fit all pins on this net">
@@ -402,6 +471,11 @@ export function InspectorPanel({
                 <span>Fit net</span>
               </Button>
             </div>
+            <p className="m-0 rounded-md border border-border/70 bg-secondary/45 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+              {netMeta
+                ? netMeta.description
+                : `Shared copper trace linking ${activeNet.pinIndices.length} pins across ${activeNet.partIds.size} components.`}
+            </p>
             <div className="grid grid-cols-2 divide-x divide-border rounded-md border border-border bg-secondary/40">
               <StatCell compact label="Pins" value={activeNet.pinIndices.length.toLocaleString()} />
               <StatCell compact label="Parts" value={activeNet.partIds.size.toLocaleString()} />
@@ -410,30 +484,40 @@ export function InspectorPanel({
               Connected components ({activeNetParts.length})
             </div>
             <div className="chip-list flex max-h-44 flex-wrap gap-1 overflow-y-auto pr-0.5">
-              {activeNetParts.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onSelect({ kind: 'part', index: id - 1, key: `part:${id - 1}` }, true)}
-                  className="rounded border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/10"
-                >
-                  {board?.parts[id - 1]?.name || `P${id}`}
-                </button>
-              ))}
+              {activeNetParts.map((id) => {
+                const part = board?.parts[id - 1];
+                const pMeta = part && !part.isDummy ? getPackageMeta(classifyPartPackage(part).kind) : null;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    title={pMeta && part ? `${part.name} — ${pMeta.label}: ${pMeta.role}` : undefined}
+                    onClick={() => onSelect({ kind: 'part', index: id - 1, key: `part:${id - 1}` }, true)}
+                    className="rounded border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/10"
+                  >
+                    <span>{part?.name || `P${id}`}</span>
+                    {pMeta && <span className="ml-1 text-[10px] font-normal text-muted-foreground">· {pMeta.friendly}</span>}
+                  </button>
+                );
+              })}
             </div>
           </div>
-        )}
+          );
+        })()}
       </section>
 
       {!isPhone && (
-        <footer className="insp-foot flex shrink-0 gap-1.5 border-t border-border bg-secondary/40 px-3 py-2">
-          <Button size="xs" variant="outline" className="flex-1" onClick={onOpenKeys}>
-            Shortcuts
+        <footer className="insp-foot flex shrink-0 gap-1 border-t border-border bg-secondary/40 px-2.5 py-2">
+          <Button size="xs" variant="outline" className="flex-1 px-1.5" onClick={onOpenGuide} title="Component & abbreviation guide">
+            Guide
           </Button>
-          <Button size="xs" variant="outline" className="flex-1" onClick={onOpenReNotes}>
+          <Button size="xs" variant="outline" className="flex-1 px-1.5" onClick={onOpenKeys}>
+            Keys
+          </Button>
+          <Button size="xs" variant="outline" className="flex-1 px-1.5" onClick={onOpenReNotes}>
             Formats
           </Button>
-          <Button size="xs" variant="outline" className="flex-1" onClick={onOpenAbout}>
+          <Button size="xs" variant="outline" className="flex-1 px-1.5" onClick={onOpenAbout}>
             About
           </Button>
         </footer>

@@ -279,6 +279,77 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
     radius: p.radius || 7,
   }));
 
+  // Spatial index of real component pins sorted by X so we can clamp pad & package
+  // overhang cleanly against neighboring parts (prevents adjacent resistors/caps overlapping).
+  const realPinsX = pins
+    .filter((pin) => pin.part > 0 && !parts[pin.part - 1]?.isDummy)
+    .sort((a, b) => a.x - b.x);
+
+  const lowerBoundX = (targetX: number): number => {
+    let lo = 0, hi = realPinsX.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (realPinsX[mid].x < targetX) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+
+  const nearestForeignPinDist = (ownPins: Pin[], ownPartId: number, partSide: Side, searchR = 140): number => {
+    let bestSq = Infinity;
+    for (const p of ownPins) {
+      const start = lowerBoundX(p.x - searchR);
+      for (let i = start; i < realPinsX.length; i++) {
+        const q = realPinsX[i];
+        if (q.x - p.x > searchR) break;
+        if (q.part === ownPartId) continue;
+        if (partSide !== 'both' && q.side !== 'both' && q.side !== partSide) continue;
+        const dSq = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+        if (dSq > 0.25 && dSq < bestSq) bestSq = dSq;
+      }
+    }
+    return Number.isFinite(bestSq) ? Math.sqrt(bestSq) : Infinity;
+  };
+
+  const clampPassiveOverhang = (
+    cx: number,
+    cy: number,
+    ux: number,
+    uy: number,
+    halfSpan: number,
+    idealArmX: number,
+    idealArmY: number,
+    ownPartId: number,
+    partSide: Side,
+  ): { armx: number; army: number } => {
+    const reach = halfSpan + idealArmX + idealArmY + 80;
+    const vx = -uy, vy = ux;
+    let maxArmX = idealArmX;
+    let maxArmY = idealArmY;
+    const start = lowerBoundX(cx - reach);
+    for (let i = start; i < realPinsX.length; i++) {
+      const q = realPinsX[i];
+      if (q.x - cx > reach) break;
+      if (q.part === ownPartId) continue;
+      if (partSide !== 'both' && q.side !== 'both' && q.side !== partSide) continue;
+      const dx = q.x - cx;
+      const dy = q.y - cy;
+      const ax = Math.abs(dx * ux + dy * uy);
+      const sy = Math.abs(dx * vx + dy * vy);
+      if (ax > halfSpan * 0.85 && sy < Math.max(idealArmY * 1.15, 16)) {
+        const endGap = ax - halfSpan;
+        if (endGap > 4) maxArmX = Math.min(maxArmX, endGap * 0.36);
+      }
+      if (ax <= halfSpan + maxArmX && sy >= 6) {
+        maxArmY = Math.min(maxArmY, sy * 0.42);
+      }
+    }
+    return {
+      armx: Math.max(3.5, Math.min(idealArmX, maxArmX)),
+      army: Math.max(4.5, Math.min(idealArmY, maxArmY)),
+    };
+  };
+
   // Group pins by part id in O(N_pins) so large boards (3,500+ parts, 20,000+ pins) finalize instantly.
   const byPart = new Map<number, number[]>();
   for (let i = 0; i < pins.length; i++) {
@@ -363,35 +434,41 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
       }
       const pitch = Number.isFinite(minDistSq) ? Math.sqrt(minDistSq) : 24;
 
-      // Ported from OpenBoardView BoardView::DrawParts empirical SMD sizing + proportional fallback.
-      const p0 = (part.name[0] || '').toUpperCase();
-      const p1 = (part.name[1] || '').toUpperCase();
+      // Ported from OpenBoardView BoardView::DrawParts empirical SMD sizing + JEDEC scaling.
+      const upperName = part.name.toUpperCase();
+      const p0 = upperName[0] || '';
+      const p1 = upperName[1] || '';
       let pinRadius = Math.max(3.2, Math.min(18, pitch * 0.34));
 
       if (own.length < 4 && p0 !== 'U' && p0 !== 'Q') {
-        if (distance > 18 && distance < 22) pinRadius = 4.2;       // 0201 passive
-        else if (distance > 28 && distance < 32) pinRadius = 6.5;  // 0402 passive
-        else if (distance > 52 && distance < 57) pinRadius = 10.5; // 0603 passive
-        else if (distance > 64 && distance < 68) pinRadius = 14;   // 0805 passive
-        else if (distance > 101 && distance < 112) pinRadius = 18; // 1206 / SMA
-        else if (distance > 165 && distance < 169) pinRadius = 22; // SMB diode
-        else if (distance > 195 && distance < 253) pinRadius = 28; // Inductor / SMC
-        else if (distance > 12) {
-          // Smooth proportional SMD pad sizing for any non-standard passive pitch
-          pinRadius = Math.max(4.2, Math.min(30, distance * 0.22));
+        if (distance > 16 && distance <= 23) pinRadius = 4.0;       // 0201 passive
+        else if (distance > 23 && distance <= 36) pinRadius = 5.8;  // 0402 passive
+        else if (distance > 36 && distance <= 58) pinRadius = 9.2;  // 0603 passive
+        else if (distance > 58 && distance <= 82) pinRadius = 12.5; // 0805 passive
+        else if (distance > 82 && distance <= 125) pinRadius = 16.5;// 1206 / SMA
+        else if (distance > 125 && distance <= 175) pinRadius = 19; // SMB / Case B
+        else if (distance > 175 && distance <= 265) pinRadius = 22; // SMC / Inductor / Case C-D
+        else if (distance > 10) {
+          pinRadius = Math.max(3.8, Math.min(24, distance * 0.14));
         }
       }
       if (Number.isFinite(minDistSq)) {
         pinRadius = Math.min(pinRadius, Math.sqrt(minDistSq) * 0.42);
+      }
+      if (own.length <= 6) {
+        const foreignDist = nearestForeignPinDist(own, part.id, part.side);
+        if (Number.isFinite(foreignDist)) {
+          pinRadius = Math.min(pinRadius, Math.max(3.2, foreignDist * 0.36));
+        }
       }
 
       for (const pin of own) {
         if (!pin.radius || pin.radius === 7 || pin.radius === 12) pin.radius = pinRadius;
       }
 
-      const isConnector = p0 === 'J' || part.name.toUpperCase().startsWith('CN') || part.name.toUpperCase().startsWith('CON');
-      const padX = isConnector && (maxX - minX) < pitch * 0.5 ? Math.max(pinRadius * 1.8, pitch * 0.42) : pinRadius;
-      const padY = isConnector && (maxY - minY) < pitch * 0.5 ? Math.max(pinRadius * 1.8, pitch * 0.42) : pinRadius;
+      const isConnector = p0 === 'J' || upperName.startsWith('CN') || upperName.startsWith('CON');
+      const padX = isConnector && (maxX - minX) < pitch * 0.5 ? Math.max(pinRadius * 1.55, pitch * 0.38) : pinRadius;
+      const padY = isConnector && (maxY - minY) < pitch * 0.5 ? Math.max(pinRadius * 1.55, pitch * 0.38) : pinRadius;
 
       const bMinX = minX - padX;
       const bMaxX = maxX + padX;
@@ -406,42 +483,57 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
         { x: bMinX, y: bMaxY },
       ];
 
-      // Build oriented outline & hull following OpenBoardView BoardView::DrawParts.
+      // Build oriented outline & hull following real JEDEC proportions + neighbor clearances.
       if (own.length === 3 && Math.abs(aspect) > 0.5 && ('DQZ'.includes(p0) || 'DQZ'.includes(p1) || part.name === 'LED')) {
         part.outline = dbox;
         part.hull = own.map((p) => ({ x: p.x, y: p.y }));
-      } else if (own.length > 1 && own.length < 4 && ('CRLD'.includes(p0) || 'CRLD'.includes(p1))) {
+      } else if (own.length === 2 && ('CRLD'.includes(p0) || 'CRLD'.includes(p1) || upperName.startsWith('FB') || upperName.startsWith('FL') || upperName.startsWith('ZD') || p0 === 'F')) {
         const dx = own[1].x - own[0].x;
         const dy = own[1].y - own[0].y;
+        const pinSpan = Math.hypot(dx, dy);
         const angle = Math.atan2(dy, dx);
-        let armx = Math.max(pinRadius, distance * 0.16);
-        let army = Math.max(pinRadius, distance * 0.25);
-        if ((p0 === 'L' || p1 === 'L') && distance > 50) {
-          pinRadius = Math.min(18, Math.max(8, distance * 0.18));
+        const ux = pinSpan > 0.01 ? dx / pinSpan : 1;
+        const uy = pinSpan > 0.01 ? dy / pinSpan : 0;
+        const mpx = (own[0].x + own[1].x) * 0.5;
+        const mpy = (own[0].y + own[1].y) * 0.5;
+
+        let idealArmX = Math.min(18, Math.max(3.6, pinSpan * 0.105));
+        let idealArmY = Math.min(58, Math.max(pinRadius * 1.15, pinSpan * 0.28));
+
+        if ((p0 === 'L' || p1 === 'L') && !upperName.startsWith('FB') && pinSpan > 50) {
+          pinRadius = Math.min(pinRadius, Math.max(7, pinSpan * 0.15));
           for (const pin of own) pin.radius = pinRadius;
-          army = distance * 0.42;
-          armx = pinRadius * 1.1;
-        } else if ((p0 === 'C' || p1 === 'C') && distance > 90 && part.name.toUpperCase().startsWith('CE')) {
-          pinRadius = Math.min(14, distance * 0.16);
+          idealArmX = Math.min(20, pinSpan * 0.12);
+          idealArmY = Math.min(140, pinSpan * 0.45);
+        } else if (
+          (p0 === 'C' || p1 === 'C')
+          && (upperName.startsWith('CE') || upperName.startsWith('EC') || upperName.startsWith('CP') || (part.type === 'through' && pinSpan > 90))
+        ) {
+          pinRadius = Math.min(pinRadius, Math.max(6, pinSpan * 0.14));
           for (const pin of own) pin.radius = pinRadius;
-          army = distance / 2 - distance / 4;
-          armx = pinRadius;
-          const mpx = dx / 2 + own[0].x;
-          const mpy = dy / 2 + own[0].y;
+          idealArmX = Math.min(18, Math.max(pinRadius * 1.1, pinSpan * 0.24));
+          idealArmY = Math.min(115, Math.max(pinRadius * 1.3, pinSpan * 0.44));
           part.center = rotatePoint(mpx, mpy, mpx, mpy, angle);
-          part.expanse = distance;
+          part.expanse = pinSpan;
         }
+
+        const { armx, army } = clampPassiveOverhang(
+          mpx, mpy, ux, uy, pinSpan * 0.5, idealArmX, idealArmY, part.id, part.side,
+        );
         part.outline = [
           rotatePoint(own[0].x - armx, own[0].y - army, own[0].x, own[0].y, angle),
           rotatePoint(own[0].x - armx, own[0].y + army, own[0].x, own[0].y, angle),
           rotatePoint(own[1].x + armx, own[1].y + army, own[1].x, own[1].y, angle),
           rotatePoint(own[1].x + armx, own[1].y - army, own[1].x, own[1].y, angle),
         ];
-      } else if (own.length >= 4 && ('UJL'.includes(p0) || 'UJL'.includes(p1) || part.name.toUpperCase().startsWith('CN'))) {
+      } else if (own.length >= 4 && ('UJLQDR'.includes(p0) || 'UJLQDR'.includes(p1) || upperName.startsWith('CN'))) {
         const hull = convexHull(own);
         if (hull.length >= 3) {
           part.hull = hull;
-          part.outline = mbbCalculate(hull, Math.max(padX, padY));
+          const mbbPad = p0 === 'Q' || p0 === 'D' || p0 === 'R'
+            ? Math.min(Math.max(padX, padY), Math.max(6, pitch * 0.35))
+            : Math.max(padX, padY);
+          part.outline = mbbCalculate(hull, mbbPad);
         } else {
           part.outline = dbox;
         }
