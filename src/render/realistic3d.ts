@@ -58,135 +58,131 @@ export function classifyPartPackage(part: Part): PackageSpec {
     w = Math.max(bw, bh);
     h = Math.min(bw, bh);
   }
-  const shortSide = Math.max(10, h);
-  const longSide = Math.max(14, w);
+  const shortSide = Math.max(12, h);
+  const longSide = Math.max(16, w);
 
   let spec: PackageSpec;
 
   if ((p0 === 'C' || (p0 === 'P' && p1 === 'C')) && part.expanse && part.expanse > 90) {
-    // Radial electrolytic / polymer aluminum cylindrical can
     spec = {
       kind: 'electrolytic',
-      heightMil: Math.min(145, Math.max(58, part.expanse * 0.48)),
-      bodyTop: '#dce4ee',
-      bodySide: '#8a99ad',
+      heightMil: Math.min(150, Math.max(65, part.expanse * 0.5)),
+      bodyTop: '#e2e8f0',
+      bodySide: '#94a3b8',
       bodyStroke: '#475569',
       accentColor: '#0f172a',
       hasEndCaps: false,
       showLabelAtAllZooms: true,
     };
-  } else if ((p0 === 'C' || (p0 === 'P' && p1 === 'C')) && longSide >= 115 && pinCount === 2) {
-    // Molded Tantalum / Polymer SMD bulk capacitor (amber-yellow body with anode polarity stripe)
+  } else if ((p0 === 'C' || (p0 === 'P' && p1 === 'C')) && longSide >= 260 && pinCount === 2) {
     spec = {
       kind: 'tantalum',
-      heightMil: Math.min(62, Math.max(28, shortSide * 0.55)),
+      heightMil: Math.min(70, Math.max(34, shortSide * 0.55)),
       bodyTop: '#eab308',
       bodySide: '#ca8a04',
       bodyStroke: '#854d0e',
-      capColor: '#cbd5e1',
+      capColor: '#e2e8f0',
       accentColor: '#78350f',
       hasEndCaps: true,
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'C' || (p0 === 'P' && p1 === 'C')) {
-    // SMD Ceramic MLCC Capacitor (tan ceramic dielectric + bright silver end-caps)
+    // SMD Ceramic MLCC Capacitor (warm golden-tan ceramic dielectric + bright silver end-caps)
     spec = {
       kind: 'mlcc',
-      heightMil: Math.min(42, Math.max(11, shortSide * 0.65)),
-      bodyTop: '#c88a4b',
-      bodySide: '#9a6530',
-      bodyStroke: '#6b441e',
+      heightMil: Math.min(52, Math.max(16, shortSide * 0.58)),
+      bodyTop: '#d48c46',
+      bodySide: '#a36629',
+      bodyStroke: '#6b4218',
       capColor: '#e2e8f0',
-      accentColor: '#dfaa73',
+      accentColor: '#f3c693',
       hasEndCaps: pinCount >= 2 && pinCount <= 4,
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'R' || (p0 === 'P' && p1 === 'R')) {
-    // SMD Thick/Thin-Film Chip Resistor (matte black resistive glaze + alumina ceramic substrate + silver end-caps)
+    // SMD Chip Resistor (coal-black resistive glaze + white ceramic substrate + bright silver end-caps)
     spec = {
       kind: 'resistor',
-      heightMil: Math.min(24, Math.max(8, shortSide * 0.38)),
-      bodyTop: '#181c22',
-      bodySide: '#cbd5e1',
+      heightMil: Math.min(34, Math.max(12, shortSide * 0.36)),
+      bodyTop: '#161b22',
+      bodySide: '#e2e8f0',
       bodyStroke: '#475569',
-      capColor: '#e2e8f0',
-      accentColor: '#f8fafc',
+      capColor: '#f1f5f9',
+      accentColor: '#ffffff',
       hasEndCaps: pinCount >= 2 && pinCount <= 4,
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'L' || (p0 === 'P' && p1 === 'L') || name.startsWith('FB') || name.startsWith('FL')) {
-    // Shielded Power Inductor / Ferrite Coil
-    const isPowerCoil = longSide > 80;
+    const isPowerCoil = longSide > 80 || pinCount >= 2;
     spec = {
       kind: 'inductor',
       heightMil: isPowerCoil
-        ? Math.min(125, Math.max(46, shortSide * 0.58))
-        : Math.min(38, Math.max(14, shortSide * 0.52)),
-      bodyTop: isPowerCoil ? '#2b313a' : '#2d3748',
-      bodySide: '#1a1e24',
+        ? Math.min(125, Math.max(52, shortSide * 0.62))
+        : Math.min(44, Math.max(18, shortSide * 0.52)),
+      bodyTop: '#2d3540',
+      bodySide: '#1c2128',
       bodyStroke: '#64748b',
       capColor: '#cbd5e1',
-      accentColor: '#475569',
+      accentColor: '#b45309',
       hasEndCaps: !isPowerCoil && pinCount === 2,
       showLabelAtAllZooms: isPowerCoil,
     };
   } else if (name.startsWith('LED')) {
     spec = {
       kind: 'led',
-      heightMil: Math.min(40, Math.max(14, shortSide * 0.5)),
+      heightMil: Math.min(44, Math.max(18, shortSide * 0.5)),
       bodyTop: '#f8fafc',
       bodySide: '#cbd5e1',
       bodyStroke: '#94a3b8',
-      capColor: '#eab308',
+      capColor: '#facc15',
       accentColor: '#f59e0b',
       hasEndCaps: pinCount === 2,
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'D' || (p0 === 'P' && p1 === 'D') || name.startsWith('ZD')) {
-    // Diode / Zener (molded black body + silver cathode band)
+    // Molded SMD Diode with bright silver cathode band
     spec = {
       kind: 'diode',
-      heightMil: Math.min(44, Math.max(15, shortSide * 0.5)),
-      bodyTop: '#1a1e24',
-      bodySide: '#0f1318',
-      bodyStroke: '#475569',
-      capColor: '#dce4ec',
-      accentColor: '#e2e8f0',
+      heightMil: Math.min(48, Math.max(18, shortSide * 0.48)),
+      bodyTop: '#1b2028',
+      bodySide: '#10141a',
+      bodyStroke: '#64748b',
+      capColor: '#e2e8f0',
+      accentColor: '#f8fafc',
       hasEndCaps: pinCount === 2,
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'Q' || (p0 === 'P' && p1 === 'Q') || p0 === 'T') {
-    // Transistor / MOSFET (SOT-23 / SOT-363 / Power DFN)
+    // SOT-23 / MOSFET Transistor
     spec = {
       kind: 'transistor',
-      heightMil: Math.min(45, Math.max(16, shortSide * 0.45)),
-      bodyTop: '#1c2128',
-      bodySide: '#11151b',
-      bodyStroke: '#4b5563',
-      capColor: '#cbd5e1',
-      accentColor: '#94a3b8',
+      heightMil: Math.min(50, Math.max(22, shortSide * 0.48)),
+      bodyTop: '#1e242d',
+      bodySide: '#11161d',
+      bodyStroke: '#64748b',
+      capColor: '#e2e8f0',
+      accentColor: '#cbd5e1',
       hasEndCaps: false,
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'J' || name.startsWith('CN') || name.startsWith('CON') || name.startsWith('USB') || name.startsWith('HDMI')) {
-    // Board-to-Board / FPC / I/O Connector
+    // Board-to-Board / Pin Header / FPC Connector
     spec = {
       kind: 'connector',
-      heightMil: Math.min(135, Math.max(48, shortSide * 0.48)),
-      bodyTop: '#1e232a',
+      heightMil: Math.min(145, Math.max(65, shortSide * 0.58)),
+      bodyTop: '#334155',
       bodySide: '#64748b',
-      bodyStroke: '#94a3b8',
+      bodyStroke: '#cbd5e1',
       capColor: '#facc15',
-      accentColor: '#cbd5e1',
+      accentColor: '#fef08a',
       hasEndCaps: false,
       showLabelAtAllZooms: true,
     };
   } else if (p0 === 'Y' || p0 === 'X' || name.startsWith('XTAL') || name.startsWith('OSC')) {
-    // Quartz Crystal / Oscillator (gold ceramic base + brushed silver metal lid)
     spec = {
       kind: 'crystal',
-      heightMil: Math.min(48, Math.max(20, shortSide * 0.48)),
-      bodyTop: '#dce4ee',
+      heightMil: Math.min(52, Math.max(24, shortSide * 0.5)),
+      bodyTop: '#e2e8f0',
       bodySide: '#b45309',
       bodyStroke: '#eab308',
       capColor: '#facc15',
@@ -195,11 +191,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'F' && !name.startsWith('FB') && !name.startsWith('FL')) {
-    // SMD Fuse (white ceramic body + gold end-caps)
     spec = {
       kind: 'fuse',
-      heightMil: Math.min(34, Math.max(13, shortSide * 0.46)),
-      bodyTop: '#f1f5f9',
+      heightMil: Math.min(38, Math.max(16, shortSide * 0.46)),
+      bodyTop: '#f8fafc',
       bodySide: '#cbd5e1',
       bodyStroke: '#ca8a04',
       capColor: '#eab308',
@@ -208,17 +203,16 @@ export function classifyPartPackage(part: Part): PackageSpec {
       showLabelAtAllZooms: false,
     };
   } else if (p0 === 'U' || (p0 === 'P' && p1 === 'U') || name.startsWith('IC')) {
-    // Integrated Circuit: BGA/CSP vs QFN/SOIC/QFP
-    const isBga = pinCount >= 20 && shortSide > 105;
+    const isBga = pinCount >= 24 && shortSide > 140;
     spec = {
       kind: isBga ? 'bga' : 'ic',
       heightMil: isBga
-        ? Math.min(68, Math.max(30, Math.sqrt(longSide * shortSide) * 0.06))
-        : Math.min(50, Math.max(20, shortSide * 0.34)),
-      bodyTop: isBga ? '#111827' : '#1b2028',
-      bodySide: isBga ? '#15803d' : '#10141a',
-      bodyStroke: isBga ? '#22c55e' : '#475569',
-      capColor: '#cbd5e1',
+        ? Math.min(75, Math.max(38, Math.sqrt(longSide * shortSide) * 0.08))
+        : Math.min(64, Math.max(32, shortSide * 0.22)),
+      bodyTop: isBga ? '#111827' : '#1e242d',
+      bodySide: isBga ? '#15803d' : '#11151c',
+      bodyStroke: isBga ? '#22c55e' : '#64748b',
+      capColor: '#e2e8f0',
       accentColor: '#facc15',
       hasEndCaps: false,
       showLabelAtAllZooms: true,
@@ -226,10 +220,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
   } else {
     spec = {
       kind: 'generic',
-      heightMil: Math.min(40, Math.max(15, shortSide * 0.42)),
-      bodyTop: '#222730',
+      heightMil: Math.min(46, Math.max(18, shortSide * 0.42)),
+      bodyTop: '#252b34',
       bodySide: '#151920',
-      bodyStroke: '#4b5563',
+      bodyStroke: '#64748b',
       hasEndCaps: false,
       showLabelAtAllZooms: false,
     };
@@ -239,12 +233,10 @@ export function classifyPartPackage(part: Part): PackageSpec {
   return spec;
 }
 
-/** Helper to interpolate between two 2D points. */
 function lerpPt(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-/**Shrinks a 4-point quad along its two axes: `tLen` along 0->3 / 1->2, `tWid` along 0->1 / 3->2. */
 function insetQuad(q: Point[], tLen: number, tWid: number): Point[] {
   const p0 = lerpPt(lerpPt(q[0], q[3], tLen), lerpPt(q[1], q[2], tLen), tWid);
   const p1 = lerpPt(lerpPt(q[0], q[3], tLen), lerpPt(q[1], q[2], tLen), 1 - tWid);
@@ -253,9 +245,6 @@ function insetQuad(q: Point[], tLen: number, tWid: number): Point[] {
   return [p0, p1, p2, p3];
 }
 
-/** Draws a 2-terminal passive's silver/gold end-caps at the Pin 0 edge (q0-q1) and Pin 1 edge (q3-q2).
- *  In `finalizeBoard`, 2-pin passives always construct `part.outline` so that `q0->q1` is Pin 0's end
- *  and `q2->q3` is Pin 1's end. */
 function fillPassiveEndCaps(
   ctx: CanvasRenderingContext2D,
   q: Point[],
@@ -284,7 +273,7 @@ function fillPassiveEndCaps(
 
   if (highlightColor) {
     ctx.strokeStyle = highlightColor;
-    ctx.lineWidth = 0.8;
+    ctx.lineWidth = 0.9;
     ctx.beginPath();
     ctx.moveTo(a1.x, a1.y);
     ctx.lineTo(a2.x, a2.y);
@@ -294,8 +283,7 @@ function fillPassiveEndCaps(
   }
 }
 
-/** 2D Realistic Component Package Illustration Renderer (with X-Ray translucency so BGA balls
- *  and pads remain visible and clickable inside the physical component package). */
+/** 2D Realistic Component Package Illustration Renderer. */
 export function drawRealistic2DPart(
   ctx: CanvasRenderingContext2D,
   board: Board,
@@ -325,37 +313,34 @@ export function drawRealistic2DPart(
   if (maxDim >= 5) {
     ctx.save();
     ctx.beginPath();
-    quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x + 1.5, pt.y + 2) : ctx.lineTo(pt.x + 1.5, pt.y + 2)));
+    quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x + 2, pt.y + 2.5) : ctx.lineTo(pt.x + 2, pt.y + 2.5)));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
     ctx.fill();
     ctx.restore();
   }
 
   // 2. Radial Electrolytic / Polymer Aluminum Can (`electrolytic`)
   if (spec.kind === 'electrolytic' && part.center && part.expanse) {
-    // Dark square baseplate with chamfered corners
     ctx.beginPath();
     quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(24, 30, 38, 0.85)';
+    ctx.fillStyle = 'rgba(24, 30, 38, 0.9)';
     ctx.fill();
     ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : '#64748b';
     ctx.lineWidth = selected ? 2 : 1.1;
     ctx.stroke();
 
     const sc = S(part.center);
-    const cr = Math.max(3.5, part.expanse * 0.36 * scale);
-    // Metallic aluminum cylinder top
+    const cr = Math.max(4, part.expanse * 0.36 * scale);
     ctx.beginPath();
     ctx.arc(sc.x, sc.y, cr, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(220, 228, 238, 0.82)';
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
     ctx.fill();
     ctx.strokeStyle = '#475569';
     ctx.lineWidth = 1.3;
     ctx.stroke();
 
-    // Inner rolled aluminum groove ring
     if (cr >= 6) {
       ctx.beginPath();
       ctx.arc(sc.x, sc.y, cr * 0.78, 0, Math.PI * 2);
@@ -363,7 +348,6 @@ export function drawRealistic2DPart(
       ctx.lineWidth = 0.9;
       ctx.stroke();
 
-      // 3-spoke Y vent score lines
       ctx.beginPath();
       for (let a = 0; a < 3; a++) {
         const ang = (a * Math.PI * 2) / 3 - Math.PI / 6;
@@ -375,11 +359,10 @@ export function drawRealistic2DPart(
       ctx.stroke();
     }
 
-    // Black negative polarity crescent band
     ctx.beginPath();
     ctx.arc(sc.x, sc.y, cr * 0.93, -Math.PI * 0.36, Math.PI * 0.36);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
     ctx.fill();
     ctx.restore();
     return;
@@ -390,7 +373,7 @@ export function drawRealistic2DPart(
     ctx.beginPath();
     quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
-    ctx.fillStyle = selected || focused ? 'rgba(21, 128, 61, 0.66)' : 'rgba(20, 83, 45, 0.58)';
+    ctx.fillStyle = selected || focused ? 'rgba(21, 128, 61, 0.72)' : 'rgba(20, 83, 45, 0.65)';
     ctx.fill();
     ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : '#22c55e';
     ctx.lineWidth = selected ? 2.2 : 1.3;
@@ -401,13 +384,12 @@ export function drawRealistic2DPart(
       ctx.beginPath();
       dieQuad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.closePath();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
       ctx.lineWidth = 1.1;
       ctx.stroke();
 
-      // Gold corner fiducial at Pin 1 corner
       const pin1 = board.pins[part.pinStart];
       let bestCorner = 0;
       if (pin1) {
@@ -421,8 +403,8 @@ export function drawRealistic2DPart(
       const c0 = quad[bestCorner];
       const cNext = quad[(bestCorner + 1) % 4];
       const cPrev = quad[(bestCorner + 3) % 4];
-      const f1 = lerpPt(c0, cNext, 0.14);
-      const f2 = lerpPt(c0, cPrev, 0.14);
+      const f1 = lerpPt(c0, cNext, 0.15);
+      const f2 = lerpPt(c0, cPrev, 0.15);
       ctx.beginPath();
       ctx.moveTo(c0.x, c0.y);
       ctx.lineTo(f1.x, f1.y);
@@ -436,20 +418,20 @@ export function drawRealistic2DPart(
   }
 
   // 4. SOT-23 / Multi-lead Transistor (`transistor`) or Molded IC (`ic`) with visible metallic gull-wing leads
-  if ((spec.kind === 'transistor' || spec.kind === 'ic') && maxDim >= 9) {
+  if ((spec.kind === 'transistor' || spec.kind === 'ic') && maxDim >= 8) {
     const pinCount = Math.max(0, part.pinEnd - part.pinStart);
-    const bodyQuad = pinCount <= 8 ? insetQuad(quad, 0.12, 0.16) : insetQuad(quad, 0.08, 0.08);
+    const bodyQuad = pinCount <= 6 ? insetQuad(quad, 0.15, 0.22) : insetQuad(quad, 0.1, 0.1);
 
     // Draw metallic silver leads reaching from the molded body out to each pin pad
-    if (pinCount >= 2 && pinCount <= 32) {
+    if (pinCount >= 2 && pinCount <= 48) {
       ctx.save();
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = Math.min(4, Math.max(1.4, minDim * 0.14));
-      ctx.lineCap = 'butt';
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = Math.min(4.5, Math.max(1.6, minDim * 0.12));
+      ctx.lineCap = 'round';
       ctx.beginPath();
       for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
         const sp = S(board.pins[pIdx]);
-        const anchor = lerpPt({ x: cx, y: cy }, sp, 0.55);
+        const anchor = lerpPt({ x: cx, y: cy }, sp, 0.5);
         ctx.moveTo(anchor.x, anchor.y);
         ctx.lineTo(sp.x, sp.y);
       }
@@ -462,21 +444,21 @@ export function drawRealistic2DPart(
     bodyQuad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
     ctx.save();
-    ctx.globalAlpha *= 0.84;
+    ctx.globalAlpha *= 0.88;
     ctx.fillStyle = spec.bodyTop;
     ctx.fill();
     ctx.restore();
     ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
-    ctx.lineWidth = selected ? 2 : 1.15;
+    ctx.lineWidth = selected ? 2.1 : 1.25;
     ctx.stroke();
 
     // Concave Pin-1 dimple near Pin 1
-    if (part.pinStart < board.pins.length && minDim >= 10) {
+    if (part.pinStart < board.pins.length && minDim >= 9) {
       const sp1 = S(board.pins[part.pinStart]);
-      const dimple = lerpPt({ x: cx, y: cy }, sp1, 0.52);
+      const dimple = lerpPt({ x: cx, y: cy }, sp1, 0.5);
       ctx.beginPath();
-      ctx.arc(dimple.x, dimple.y, Math.min(3.5, Math.max(1.6, minDim * 0.1)), 0, Math.PI * 2);
-      ctx.fillStyle = '#e2e8f0';
+      ctx.arc(dimple.x, dimple.y, Math.min(3.8, Math.max(1.8, minDim * 0.09)), 0, Math.PI * 2);
+      ctx.fillStyle = '#f8fafc';
       ctx.fill();
     }
     ctx.restore();
@@ -485,15 +467,14 @@ export function drawRealistic2DPart(
 
   // 5. 2-Terminal Passives (MLCC Capacitors, Chip Resistors, Tantalum Caps, Diodes, LEDs, Fuses, Small Inductors)
   if (spec.hasEndCaps) {
-    // Slightly inset the physical component body along the width so rounded solder pads peek out cleanly
-    const bodyQuad = insetQuad(quad, 0.02, 0.1);
+    const bodyQuad = insetQuad(quad, 0.02, 0.08);
 
     // Center dielectric / resistive body
     ctx.beginPath();
     bodyQuad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
     ctx.save();
-    ctx.globalAlpha *= 0.86;
+    ctx.globalAlpha *= 0.92;
     ctx.fillStyle = spec.bodyTop;
     ctx.fill();
     ctx.restore();
@@ -501,18 +482,18 @@ export function drawRealistic2DPart(
     // Metallic silver/gold end-cap terminations at Pin 0 (q0-q1) and Pin 1 (q3-q2)
     if (maxDim >= 5 && spec.capColor) {
       ctx.save();
-      ctx.globalAlpha *= 0.94;
-      fillPassiveEndCaps(ctx, bodyQuad, 0.24, spec.capColor, 'rgba(71, 85, 105, 0.7)');
+      ctx.globalAlpha *= 0.96;
+      fillPassiveEndCaps(ctx, bodyQuad, 0.25, spec.capColor, 'rgba(71, 85, 105, 0.75)');
       ctx.restore();
     }
 
     // Specular 3D sheen strip down the center of ceramic MLCC capacitors
-    if (spec.kind === 'mlcc' && maxDim >= 9) {
-      const m0 = lerpPt(lerpPt(bodyQuad[0], bodyQuad[1], 0.35), lerpPt(bodyQuad[3], bodyQuad[2], 0.35), 0.26);
-      const m1 = lerpPt(lerpPt(bodyQuad[0], bodyQuad[1], 0.35), lerpPt(bodyQuad[3], bodyQuad[2], 0.35), 0.74);
+    if (spec.kind === 'mlcc' && maxDim >= 8) {
+      const m0 = lerpPt(lerpPt(bodyQuad[0], bodyQuad[1], 0.34), lerpPt(bodyQuad[3], bodyQuad[2], 0.34), 0.28);
+      const m1 = lerpPt(lerpPt(bodyQuad[0], bodyQuad[1], 0.34), lerpPt(bodyQuad[3], bodyQuad[2], 0.34), 0.72);
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 235, 205, 0.38)';
-      ctx.lineWidth = Math.max(1, minDim * 0.22);
+      ctx.strokeStyle = 'rgba(255, 240, 215, 0.48)';
+      ctx.lineWidth = Math.max(1.2, minDim * 0.22);
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(m0.x, m0.y);
@@ -523,11 +504,11 @@ export function drawRealistic2DPart(
 
     // Diode cathode band / Tantalum anode polarity bar near Pin 0 end
     if ((spec.kind === 'diode' || spec.kind === 'tantalum') && maxDim >= 8) {
-      const k0 = lerpPt(bodyQuad[0], bodyQuad[3], 0.33);
-      const k1 = lerpPt(bodyQuad[1], bodyQuad[2], 0.33);
+      const k0 = lerpPt(bodyQuad[0], bodyQuad[3], 0.34);
+      const k1 = lerpPt(bodyQuad[1], bodyQuad[2], 0.34);
       ctx.save();
-      ctx.strokeStyle = spec.accentColor || '#e2e8f0';
-      ctx.lineWidth = Math.max(1.6, maxDim * 0.09);
+      ctx.strokeStyle = spec.accentColor || '#f8fafc';
+      ctx.lineWidth = Math.max(1.8, maxDim * 0.1);
       ctx.beginPath();
       ctx.moveTo(k0.x, k0.y);
       ctx.lineTo(k1.x, k1.y);
@@ -535,7 +516,6 @@ export function drawRealistic2DPart(
       ctx.restore();
     }
 
-    // LED glowing amber phosphor dome in center
     if (spec.kind === 'led' && minDim >= 6) {
       ctx.save();
       ctx.beginPath();
@@ -548,7 +528,6 @@ export function drawRealistic2DPart(
       ctx.restore();
     }
 
-    // Outer package rim
     ctx.beginPath();
     bodyQuad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
@@ -564,43 +543,42 @@ export function drawRealistic2DPart(
   quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
   ctx.closePath();
   ctx.save();
-  ctx.globalAlpha *= 0.82;
+  ctx.globalAlpha *= 0.88;
   ctx.fillStyle = spec.bodyTop;
   ctx.fill();
   ctx.restore();
 
-  if (spec.kind === 'inductor' && minDim >= 12) {
-    // Raised circular sintered ferrite drum core boss
+  if (spec.kind === 'inductor' && minDim >= 10) {
+    // Raised circular sintered ferrite drum core boss + copper coil ring
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, minDim * 0.38, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(30, 35, 42, 0.72)';
+    ctx.fillStyle = 'rgba(24, 28, 34, 0.88)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#b45309';
+    ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.restore();
-  } else if (spec.kind === 'connector' && minDim >= 10) {
+  } else if (spec.kind === 'connector' && minDim >= 8) {
     // Recessed dark mating cavity + gold contact finger bars
-    const slotQuad = insetQuad(quad, 0.14, 0.24);
+    const slotQuad = insetQuad(quad, 0.08, 0.24);
     ctx.save();
     ctx.beginPath();
     slotQuad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(12, 15, 20, 0.82)';
+    ctx.fillStyle = 'rgba(12, 15, 20, 0.88)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(203, 213, 225, 0.7)';
-    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.restore();
   } else if (spec.kind === 'crystal' && minDim >= 8) {
-    // Gold ceramic base rim + brushed metallic inner lid
     const lidQuad = insetQuad(quad, 0.12, 0.12);
     ctx.save();
     ctx.beginPath();
     lidQuad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(241, 245, 249, 0.82)';
+    ctx.fillStyle = 'rgba(241, 245, 249, 0.88)';
     ctx.fill();
     ctx.strokeStyle = '#ca8a04';
     ctx.lineWidth = 1.1;
@@ -612,7 +590,7 @@ export function drawRealistic2DPart(
   quad.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
   ctx.closePath();
   ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
-  ctx.lineWidth = selected ? 2.1 : focused ? 1.6 : 1.1;
+  ctx.lineWidth = selected ? 2.1 : focused ? 1.6 : 1.15;
   ctx.stroke();
 
   ctx.restore();
@@ -623,8 +601,8 @@ export function drawRealistic2DPart(
  * ========================================================================== */
 
 export interface Camera3D {
-  pitchDeg: number; // Tilt angle: 0° = top-down, 50° = default 3D oblique
-  yawDeg: number;   // Turntable spin around Z axis
+  pitchDeg: number; // Tilt angle: -175°..+175° (0° = top-down, 48° = default 3D oblique, >90° = viewing underside)
+  yawDeg: number;   // Turntable spin around Z axis (-180°..+180°)
 }
 
 export interface ProjectedPoint {
@@ -642,12 +620,33 @@ export interface Projector3D {
   cosR: number;
   sinR: number;
   center: Point;
+  topFacesCamera: boolean;
 }
 
-/** Creates a screen-centered 3D projector:
- *  - Tilting (`pitchDeg`) pivots around the horizontal line passing through the CENTER OF THE SCREEN
- *    `(width/2, height/2)` so the component you are inspecting stays dead-center when you tilt!
- *  - Perspective foreshortening is normalized to screen dimensions so zooming in 50× never warps polygons! */
+export const BOARD_HALF_THICKNESS_MIL = 31; // Standard 1.6mm (62 mil) FR-4 PCB half-thickness
+
+/** Determines the 3D Z base surface and extrusion direction for a given board side:
+ *  - When only a single side (`Top` OR `Bottom`) is enabled in the UI, that side is placed on
+ *    the camera-facing surface of the 3D PCB so it is NEVER hidden underneath the green board!
+ *  - When `Both` sides are enabled, `Top` sits on `+Z` and `Bottom` sits on `-Z`. */
+export function getSideZ(
+  side: Side,
+  layers: Layers,
+  topFacesCamera: boolean,
+): { zBase: number; zSign: number } {
+  const singleSideMode = (layers.top && !layers.bottom) || (layers.bottom && !layers.top);
+  if (singleSideMode) {
+    return topFacesCamera
+      ? { zBase: BOARD_HALF_THICKNESS_MIL, zSign: 1 }
+      : { zBase: -BOARD_HALF_THICKNESS_MIL, zSign: -1 };
+  }
+  if (side === 'bottom') {
+    return { zBase: -BOARD_HALF_THICKNESS_MIL, zSign: -1 };
+  }
+  return { zBase: BOARD_HALF_THICKNESS_MIL, zSign: 1 };
+}
+
+/** Creates a screen-centered 3D projector with correct Painter's depth (`larger depth = further away`). */
 export function makeProjector3D(
   board: Board,
   width: number,
@@ -659,7 +658,7 @@ export function makeProjector3D(
   cam: Camera3D,
 ): Projector3D {
   const center: Point = {
-    x: (board.bounds.minX + board.bounds.minX + (board.bounds.maxX - board.bounds.minX)) / 2,
+    x: (board.bounds.minX + board.bounds.maxX) / 2,
     y: (board.bounds.minY + board.bounds.maxY) / 2,
   };
   const rotRad = ((rotation + cam.yawDeg) * Math.PI) / 180;
@@ -687,11 +686,12 @@ export function makeProjector3D(
 
     // Tilt around the viewport center horizontal line (ry = 0)
     const yTilt = ry * cosP - rz * sinP;
-    const zDepth = ry * sinP + rz * cosP;
+    // IMPORTANT: Larger depth = further away from camera!
+    // In screen space, +ry is down (closer when sinP > 0) and +rz is up off board (closer when cosP > 0).
+    const zDepth = -ry * sinP - rz * cosP;
 
-    // Gentle screen-normalized perspective foreshortening that never clips or warps at high zoom
-    const zNorm = Math.max(-fov * 0.38, Math.min(fov * 0.38, zDepth));
-    const persp = fov / (fov + zNorm * 0.28);
+    const zNorm = Math.max(-fov * 0.35, Math.min(fov * 0.35, zDepth));
+    const persp = fov / (fov + zNorm * 0.24);
 
     return {
       x: width / 2 + rx * persp,
@@ -709,14 +709,14 @@ export function makeProjector3D(
     const u = sx - width / 2;
     const v = sy - height / 2;
 
-    // Approximate inverse perspective (2 fixed-point iterations for exact sub-pixel convergence)
+    const safeCosP = Math.abs(cosP) < 0.15 ? (cosP >= 0 ? 0.15 : -0.15) : cosP;
     let persp = 1;
-    let ry = (v + rz * sinP) / Math.max(0.18, cosP);
+    let ry = (v + rz * sinP) / safeCosP;
     for (let iter = 0; iter < 2; iter++) {
-      ry = (v / persp + rz * sinP) / Math.max(0.18, cosP);
-      const zDepth = ry * sinP + rz * cosP;
-      const zNorm = Math.max(-fov * 0.38, Math.min(fov * 0.38, zDepth));
-      persp = fov / (fov + zNorm * 0.28);
+      ry = (v / persp + rz * sinP) / safeCosP;
+      const zDepth = -ry * sinP - rz * cosP;
+      const zNorm = Math.max(-fov * 0.35, Math.min(fov * 0.35, zDepth));
+      persp = fov / (fov + zNorm * 0.24);
     }
     const rx = u / persp;
 
@@ -729,6 +729,10 @@ export function makeProjector3D(
     return { x: ux + center.x, y: uy + center.y };
   };
 
+  const topOrigin = project3D(center, BOARD_HALF_THICKNESS_MIL);
+  const botOrigin = project3D(center, -BOARD_HALF_THICKNESS_MIL);
+  const topFacesCamera = topOrigin.depth <= botOrigin.depth;
+
   return {
     project3D,
     unprojectToPlane,
@@ -737,6 +741,7 @@ export function makeProjector3D(
     cosR,
     sinR,
     center,
+    topFacesCamera,
   };
 }
 
@@ -758,7 +763,6 @@ export function zoomAt3D(
   const beforeProj = makeProjector3D(board, width, height, view, flipX, flipY, rotation, cam);
   const worldPt = beforeProj.unprojectToPlane(sx, sy, 0);
 
-  // Compute rx0, ry0 at panX = 0, panY = 0 with the new scale
   let dx = worldPt.x - beforeProj.center.x;
   let dy = worldPt.y - beforeProj.center.y;
   if (flipX) dx = -dx;
@@ -766,7 +770,6 @@ export function zoomAt3D(
   const rx0 = (dx * beforeProj.cosR - dy * beforeProj.sinR) * scale;
   const ry0 = (dx * beforeProj.sinR + dy * beforeProj.cosR) * scale;
 
-  // Preserve the exact screen offset (rx, ry) of worldPt before zoom
   const rxOld = (dx * beforeProj.cosR - dy * beforeProj.sinR) * view.scale + view.panX;
   const ryOld = (dx * beforeProj.sinR + dy * beforeProj.cosR) * view.scale + view.panY;
 
@@ -777,8 +780,7 @@ export function zoomAt3D(
   };
 }
 
-/** Orbits the 3D camera around the world point currently at the center of the screen `(width/2, height/2)`,
- *  adjusting `panX` and `panY` so the inspected component stays locked at the center of the viewport! */
+/** Orbits the 3D camera around the world point currently at the center of the screen `(width/2, height/2)`. */
 export function orbitAroundPivot(
   pivotWorld: Point,
   baseScale: number,
@@ -843,8 +845,6 @@ function traceMultiContour3D(
   }
 }
 
-export const BOARD_HALF_THICKNESS_MIL = 31; // Standard 1.6mm (62 mil) FR-4 PCB half-thickness
-
 /** Draws a 3D Orientation Compass Gizmo in the top-right corner of the 3D viewport. */
 function draw3DGizmo(
   ctx: CanvasRenderingContext2D,
@@ -879,7 +879,7 @@ function draw3DGizmo(
   ctx.save();
   ctx.beginPath();
   ctx.arc(gx, gy, 30, 0, Math.PI * 2);
-  ctx.fillStyle = palette.bg === '#ffffff' ? 'rgba(240, 244, 248, 0.88)' : 'rgba(10, 16, 24, 0.82)';
+  ctx.fillStyle = palette.bg === '#ffffff' ? 'rgba(240, 244, 248, 0.9)' : 'rgba(10, 16, 24, 0.86)';
   ctx.fill();
   ctx.strokeStyle = palette.outlineStroke;
   ctx.lineWidth = 1;
@@ -932,14 +932,11 @@ export function renderBoard3D(
   const P = proj.project3D;
   const zTopSurface = BOARD_HALF_THICKNESS_MIL;
   const zBotSurface = -BOARD_HALF_THICKNESS_MIL;
+  const topFacesCamera = proj.topFacesCamera;
 
   const activeNetInfo = highlightNet && index ? index.nets.get(highlightNet) : undefined;
   const hasFilter = Boolean(selection || (highlightNet && highlightNet !== 'UNCONNECTED') || focusParts.size > 0);
-
-  // Determine which board surface faces the camera
-  const topOrigin = P(proj.center, zTopSurface);
-  const botOrigin = P(proj.center, zBotSurface);
-  const topFacesCamera = topOrigin.depth <= botOrigin.depth;
+  const isDenseBoard = board.parts.length > 40;
 
   // 1. 3D Reference Grid on the far PCB plane
   if (layers.grid) {
@@ -948,15 +945,16 @@ export function renderBoard3D(
     const pad = 600;
     const minX = board.bounds.minX - pad, maxX = board.bounds.maxX + pad;
     const minY = board.bounds.minY - pad, maxY = board.bounds.maxY + pad;
+    const zGrid = topFacesCamera ? zBotSurface : zTopSurface;
     ctx.strokeStyle = palette.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = Math.ceil(minX / step) * step; x <= maxX; x += step) {
-      const a = P({ x, y: minY }, zBotSurface), b = P({ x, y: maxY }, zBotSurface);
+      const a = P({ x, y: minY }, zGrid), b = P({ x, y: maxY }, zGrid);
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
     }
     for (let y = Math.ceil(minY / step) * step; y <= maxY; y += step) {
-      const a = P({ x: minX, y }, zBotSurface), b = P({ x: maxX, y }, zBotSurface);
+      const a = P({ x: minX, y }, zGrid), b = P({ x: maxX, y }, zGrid);
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
     }
     ctx.stroke();
@@ -967,8 +965,7 @@ export function renderBoard3D(
     const sideEnabled = side === 'top' ? layers.top : layers.bottom;
     if (!sideEnabled) return;
 
-    const zBase = side === 'top' ? zTopSurface : zBotSurface;
-    const zSign = side === 'top' ? 1 : -1;
+    const { zBase, zSign } = getSideZ(side, layers, topFacesCamera);
 
     // 2a. Solder pads / BGA balls on the PCB surface (z = zBase)
     const drawPinsOnSurface = (overlayPass: boolean) => {
@@ -993,9 +990,12 @@ export function renderBoard3D(
 
       for (let idx = 0; idx < board.pins.length; idx++) {
         const pin = board.pins[idx];
-        if (pin.side !== side && !(pin.side === 'both' && side === (topFacesCamera ? 'top' : 'bottom'))) continue;
+        const pinMatchesSide = pin.side === side
+          || (pin.side === 'both' && (side === (layers.bottom && !layers.top ? 'bottom' : 'top')));
+        if (!pinMatchesSide) continue;
+
         const projPt = P(pin, zBase);
-        const r = Math.min(22, Math.max(0.85, pin.radius * view.scale * 0.85 * projPt.persp));
+        const r = Math.min(22, Math.max(1.1, pin.radius * view.scale * 0.9 * projPt.persp));
         if (projPt.x < -r - 4 || projPt.x > w + r + 4 || projPt.y < -r - 4 || projPt.y > h + r + 4) continue;
 
         const isSelected = selection?.kind === 'pin' && selection.index === idx;
@@ -1017,47 +1017,46 @@ export function renderBoard3D(
         else if (isGnd) buckets.gnd.push(p3);
         else buckets.normal.push(p3);
 
-        if (overlayPass && (r >= 11 || ((isSelected || isPartSelected || isSameNet) && r >= 7.5))) {
+        if (overlayPass && (r >= 10 || ((isSelected || isPartSelected || isSameNet) && r >= 7))) {
           labeled.push(p3);
         }
       }
 
       if (!overlayPass) {
-        // Base pass: solid gold/silver PCB pads underneath the 3D components
         const drawBaseBucket = (arr: Pin3D[], fillCol: string, strokeCol: string, alpha: number) => {
           if (!arr.length) return;
-          const dim = hasFilter ? 0.45 : 1;
+          const dim = hasFilter ? 0.48 : 1;
           ctx.save();
           ctx.beginPath();
           for (const p of arr) {
-            ctx.moveTo(p.sx + p.r, p.sy);
-            ctx.arc(p.sx, p.sy, p.r, 0, Math.PI * 2);
+            const pr = p.r * 1.15;
+            ctx.moveTo(p.sx + pr, p.sy);
+            ctx.arc(p.sx, p.sy, pr, 0, Math.PI * 2);
           }
           ctx.fillStyle = fillCol;
           ctx.globalAlpha = alpha * dim;
           ctx.fill();
           ctx.strokeStyle = strokeCol;
-          ctx.lineWidth = Math.min(1.4, Math.max(0.75, arr[0].r * 0.2));
-          ctx.globalAlpha = Math.min(1, (alpha + 0.25) * dim);
+          ctx.lineWidth = Math.min(1.5, Math.max(0.8, arr[0].r * 0.22));
+          ctx.globalAlpha = Math.min(1, (alpha + 0.2) * dim);
           ctx.stroke();
           ctx.restore();
         };
 
-        drawBaseBucket(buckets.nc, '#334155', '#64748b', 0.5);
-        drawBaseBucket(buckets.gnd, '#475569', '#94a3b8', 0.65);
+        drawBaseBucket(buckets.nc, '#475569', '#94a3b8', 0.6);
+        drawBaseBucket(buckets.gnd, '#64748b', '#cbd5e1', 0.75);
         drawBaseBucket(
           buckets.normal,
-          side === 'top' ? '#d4af37' : '#3b82f6',
-          side === 'top' ? '#fef08a' : '#93c5fd',
-          0.78,
+          side === 'top' ? '#eab308' : '#38bdf8',
+          side === 'top' ? '#fef08a' : '#bae6fd',
+          0.88,
         );
-        drawBaseBucket(buckets.testPad, '#eab308', '#fef08a', 0.9);
-        drawBaseBucket(buckets.pin1, palette.pinA1, '#ffffff', 0.88);
+        drawBaseBucket(buckets.testPad, '#facc15', '#ffffff', 0.95);
+        drawBaseBucket(buckets.pin1, palette.pinA1, '#ffffff', 0.92);
       } else {
-        // X-Ray Overlay pass: subtle rings on top of 3D bodies so BGA balls and pads are always visible & clickable
         const drawXrayRing = (arr: Pin3D[], strokeCol: string, alpha: number) => {
           if (!arr.length) return;
-          const dim = hasFilter ? 0.38 : 1;
+          const dim = hasFilter ? 0.42 : 1;
           ctx.save();
           ctx.beginPath();
           for (const p of arr) {
@@ -1065,27 +1064,27 @@ export function renderBoard3D(
             ctx.arc(p.sx, p.sy, p.r, 0, Math.PI * 2);
           }
           ctx.strokeStyle = strokeCol;
-          ctx.lineWidth = Math.min(1.3, Math.max(0.75, arr[0].r * 0.2));
+          ctx.lineWidth = Math.min(1.4, Math.max(0.85, arr[0].r * 0.22));
           ctx.globalAlpha = alpha * dim;
           ctx.stroke();
           ctx.restore();
         };
 
-        drawXrayRing(buckets.nc, palette.pinNc, 0.42);
-        drawXrayRing(buckets.gnd, palette.pinGround, 0.55);
-        drawXrayRing(buckets.normal, side === 'top' ? palette.top : palette.bottom, 0.68);
-        drawXrayRing(buckets.pin1, palette.pinA1, 0.9);
+        drawXrayRing(buckets.nc, palette.pinNc, 0.45);
+        drawXrayRing(buckets.gnd, '#94a3b8', 0.62);
+        drawXrayRing(buckets.normal, side === 'top' ? '#fde047' : '#7dd3fc', 0.72);
+        drawXrayRing(buckets.pin1, palette.pinA1, 0.92);
 
         if (highlighted.length) {
           ctx.save();
           for (const p of highlighted) {
-            const hr = Math.max(2.8, p.r + (p.isSelected ? 2 : 1.2));
+            const hr = Math.max(3, p.r + (p.isSelected ? 2.2 : 1.4));
             ctx.beginPath();
             ctx.arc(p.sx, p.sy, hr, 0, Math.PI * 2);
             ctx.fillStyle = p.isSelected ? palette.pinSelected : palette.pinSameNet;
             ctx.fill();
             ctx.strokeStyle = palette.selectionRing;
-            ctx.lineWidth = 1.6;
+            ctx.lineWidth = 1.7;
             ctx.stroke();
           }
           ctx.restore();
@@ -1101,10 +1100,10 @@ export function renderBoard3D(
             const fontPx = Math.min(10.5, Math.max(6.5, (sp.r * 1.4) / Math.max(1.8, pinLabel.length * 0.58)));
             if (fontPx < 6.5) continue;
             ctx.font = `700 ${fontPx.toFixed(1)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-            ctx.strokeStyle = palette.bg;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
             ctx.lineWidth = 2.2;
             ctx.strokeText(pinLabel, sp.sx, sp.sy);
-            ctx.fillStyle = palette.pinText;
+            ctx.fillStyle = '#ffffff';
             ctx.fillText(pinLabel, sp.sx, sp.sy);
           }
           ctx.restore();
@@ -1112,7 +1111,7 @@ export function renderBoard3D(
       }
     };
 
-    // Draw base PCB pads first
+    // Draw base gold/copper PCB solder pads first
     drawPinsOnSurface(false);
 
     // 2b. Collect and depth-sort visible 3D components on this side (Painter's algorithm: back-to-front)
@@ -1135,7 +1134,9 @@ export function renderBoard3D(
 
     board.parts.forEach((part, i) => {
       if (part.isDummy || !part.box) return;
-      const partSide = part.side === 'both' ? (topFacesCamera ? 'top' : 'bottom') : part.side;
+      const partSide = part.side === 'both'
+        ? (layers.bottom && !layers.top ? 'bottom' : 'top')
+        : part.side;
       if (partSide !== side) return;
 
       const rawPoly = part.outline && part.outline.length >= 4
@@ -1148,11 +1149,10 @@ export function renderBoard3D(
           ];
 
       const spec = classifyPartPackage(part);
-      // Inset 2-pin passives slightly along width so gold solder pads remain visible at both ends
       const polyWorld = spec.hasEndCaps
-        ? insetQuad(rawPoly, 0.02, 0.1)
+        ? insetQuad(rawPoly, 0.02, 0.08)
         : (spec.kind === 'transistor' || spec.kind === 'ic')
-          ? insetQuad(rawPoly, 0.08, 0.1)
+          ? insetQuad(rawPoly, 0.1, 0.12)
           : rawPoly;
 
       const zRoof = zBase + zSign * spec.heightMil;
@@ -1188,6 +1188,7 @@ export function renderBoard3D(
       });
     });
 
+    // Sort furthest (largest depth) to closest (smallest depth)
     items.sort((a, b) => b.depth - a.depth);
 
     // 2c. Render each 3D extruded component package
@@ -1195,29 +1196,27 @@ export function renderBoard3D(
       const { part, spec, basePts, roofPts, selected, focused, highlighted, screenSize } = item;
 
       ctx.save();
-      if (hasFilter && !highlighted) ctx.globalAlpha = 0.36;
+      if (hasFilter && !highlighted) ctx.globalAlpha = 0.38;
 
-      const xrayAlpha = selected || focused ? 0.9 : spec.kind === 'bga' ? 0.68 : 0.82;
+      const xrayAlpha = selected || focused ? 0.94 : spec.kind === 'bga' ? 0.74 : 0.88;
       const zRoof = zBase + zSign * spec.heightMil;
 
-      // --- SPECIAL 3D CYLINDRICAL CAN FOR RADIAL ELECTROLYTIC CAPACITORS ---
+      // --- 1. RADIAL ELECTROLYTIC CAPACITOR 3D CYLINDER ---
       if (spec.kind === 'electrolytic' && part.center && part.expanse) {
-        // Dark baseplate on PCB surface
         ctx.beginPath();
         basePts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
         ctx.closePath();
-        ctx.fillStyle = 'rgba(24, 30, 38, 0.88)';
+        ctx.fillStyle = 'rgba(24, 30, 38, 0.92)';
         ctx.fill();
-        ctx.strokeStyle = '#475569';
+        ctx.strokeStyle = '#64748b';
         ctx.lineWidth = 1;
         ctx.stroke();
 
         const cBase = P(part.center, zBase);
         const cTop = P(part.center, zRoof);
-        const rBase = Math.max(3, part.expanse * 0.36 * view.scale * cBase.persp);
-        const rTop = Math.max(3, part.expanse * 0.36 * view.scale * cTop.persp);
+        const rBase = Math.max(3.5, part.expanse * 0.36 * view.scale * cBase.persp);
+        const rTop = Math.max(3.5, part.expanse * 0.36 * view.scale * cTop.persp);
 
-        // Extruded 3D cylinder body connecting base circle to top circle
         const dxCyl = cTop.x - cBase.x, dyCyl = cTop.y - cBase.y;
         const perpAngle = Math.atan2(dyCyl, dxCyl) + Math.PI / 2;
         const nx = Math.cos(perpAngle), ny = Math.sin(perpAngle);
@@ -1231,7 +1230,6 @@ export function renderBoard3D(
         ctx.fillStyle = spec.bodySide;
         ctx.fill();
 
-        // Top circular aluminum dome
         ctx.beginPath();
         ctx.arc(cTop.x, cTop.y, rTop, 0, Math.PI * 2);
         ctx.fillStyle = spec.bodyTop;
@@ -1240,7 +1238,6 @@ export function renderBoard3D(
         ctx.lineWidth = selected ? 2 : 1.2;
         ctx.stroke();
 
-        // Negative polarity crescent on 3D cap top
         ctx.beginPath();
         ctx.arc(cTop.x, cTop.y, rTop * 0.92, -Math.PI * 0.36, Math.PI * 0.36);
         ctx.closePath();
@@ -1262,27 +1259,33 @@ export function renderBoard3D(
         continue;
       }
 
-      // --- METALLIC LEADS ON SOT-23 TRANSISTORS & SOIC/QFN ICs ---
+      // --- 2. 3D BENT GULL-WING METALLIC LEADS ON ICs & TRANSISTORS ---
       const pinCount = Math.max(0, part.pinEnd - part.pinStart);
-      if ((spec.kind === 'transistor' || spec.kind === 'ic') && pinCount >= 2 && pinCount <= 32 && screenSize >= 10) {
-        const bcx = (basePts[0].x + basePts[1].x + basePts[2].x + basePts[3].x) * 0.25;
-        const bcy = (basePts[0].y + basePts[1].y + basePts[2].y + basePts[3].y) * 0.25;
+      if ((spec.kind === 'transistor' || spec.kind === 'ic') && pinCount >= 2 && pinCount <= 48 && screenSize >= 8) {
+        const zMid = zBase + zSign * spec.heightMil * 0.45;
+        const mcx = (basePts[0].x + basePts[1].x + basePts[2].x + basePts[3].x) * 0.25;
+        const mcy = (basePts[0].y + basePts[1].y + basePts[2].y + basePts[3].y) * 0.25;
         ctx.save();
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = Math.min(3.6, Math.max(1.3, screenSize * 0.08));
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = Math.min(4.2, Math.max(1.5, screenSize * 0.075));
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
         for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
-          const sp = P(board.pins[pIdx], zBase);
-          const anchor = lerpPt({ x: bcx, y: bcy }, sp, 0.52);
-          ctx.moveTo(anchor.x, anchor.y);
-          ctx.lineTo(sp.x, sp.y);
+          const pin = board.pins[pIdx];
+          const sPad = P(pin, zBase);
+          const sKnee = P(pin, zMid);
+          const sShoulder = lerpPt({ x: mcx, y: mcy }, sKnee, 0.62);
+          ctx.moveTo(sShoulder.x, sShoulder.y);
+          ctx.lineTo(sKnee.x, sKnee.y);
+          ctx.lineTo(sPad.x, sPad.y);
         }
         ctx.stroke();
         ctx.restore();
       }
 
-      // --- 4 EXTRUDED 3D SIDE WALLS ---
-      if (screenSize >= 3.2) {
+      // --- 3. 4 EXTRUDED 3D SIDE WALLS (sorted back-to-front by wall midpoint depth) ---
+      if (screenSize >= 3) {
         const walls = [0, 1, 2, 3].map((k) => {
           const next = (k + 1) % 4;
           const wallDepth = (basePts[k].depth + basePts[next].depth + roofPts[k].depth + roofPts[next].depth) * 0.25;
@@ -1299,18 +1302,17 @@ export function renderBoard3D(
 
           ctx.save();
           ctx.globalAlpha *= xrayAlpha;
-          // Edges k===0 (q0->q1) and k===2 (q2->q3) are the Pin 0 and Pin 1 end-cap walls on 2-pin passives!
           const isEndCapWall = spec.hasEndCaps && (k === 0 || k === 2);
           ctx.fillStyle = isEndCapWall && spec.capColor ? spec.capColor : spec.bodySide;
           ctx.fill();
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.42)';
-          ctx.lineWidth = 0.75;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+          ctx.lineWidth = 0.85;
           ctx.stroke();
           ctx.restore();
         }
       }
 
-      // --- 3D ROOF FACE ---
+      // --- 4. 3D ROOF FACE ---
       ctx.beginPath();
       roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.closePath();
@@ -1321,21 +1323,36 @@ export function renderBoard3D(
       ctx.fill();
       ctx.restore();
 
-      // --- PACKAGE-SPECIFIC 3D ROOF ILLUSTRATIONS ---
+      // --- 5. PACKAGE-SPECIFIC 3D ROOF ILLUSTRATIONS ---
       if (spec.hasEndCaps && spec.capColor && screenSize >= 5) {
-        // Silver/gold end-caps at q0-q1 (Pin 0) and q3-q2 (Pin 1)
+        // Metallic silver/gold end-caps at q0-q1 (Pin 0) and q3-q2 (Pin 1)
         ctx.save();
-        ctx.globalAlpha *= xrayAlpha * 0.96;
-        fillPassiveEndCaps(ctx, roofPts, 0.24, spec.capColor, 'rgba(71, 85, 105, 0.75)');
+        ctx.globalAlpha *= xrayAlpha * 0.98;
+        fillPassiveEndCaps(ctx, roofPts, 0.25, spec.capColor, 'rgba(71, 85, 105, 0.8)');
         ctx.restore();
 
-        // Ceramic capacitor specular highlight or diode/tantalum polarity band
-        if ((spec.kind === 'diode' || spec.kind === 'tantalum') && screenSize >= 8) {
-          const k0 = lerpPt(roofPts[0], roofPts[3], 0.33);
-          const k1 = lerpPt(roofPts[1], roofPts[2], 0.33);
+        // Specular sheen on MLCC ceramic capacitors
+        if (spec.kind === 'mlcc' && screenSize >= 8) {
+          const m0 = lerpPt(lerpPt(roofPts[0], roofPts[1], 0.34), lerpPt(roofPts[3], roofPts[2], 0.34), 0.28);
+          const m1 = lerpPt(lerpPt(roofPts[0], roofPts[1], 0.34), lerpPt(roofPts[3], roofPts[2], 0.34), 0.72);
           ctx.save();
-          ctx.strokeStyle = spec.accentColor || '#e2e8f0';
-          ctx.lineWidth = Math.max(1.5, screenSize * 0.08);
+          ctx.strokeStyle = 'rgba(255, 240, 215, 0.45)';
+          ctx.lineWidth = Math.max(1.2, screenSize * 0.08);
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(m0.x, m0.y);
+          ctx.lineTo(m1.x, m1.y);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Diode cathode band / Tantalum anode polarity bar
+        if ((spec.kind === 'diode' || spec.kind === 'tantalum') && screenSize >= 8) {
+          const k0 = lerpPt(roofPts[0], roofPts[3], 0.34);
+          const k1 = lerpPt(roofPts[1], roofPts[2], 0.34);
+          ctx.save();
+          ctx.strokeStyle = spec.accentColor || '#f8fafc';
+          ctx.lineWidth = Math.max(1.8, screenSize * 0.09);
           ctx.beginPath();
           ctx.moveTo(k0.x, k0.y);
           ctx.lineTo(k1.x, k1.y);
@@ -1352,21 +1369,19 @@ export function renderBoard3D(
           ctx.restore();
         }
       } else if (spec.kind === 'bga' && screenSize >= 12) {
-        // Raised 3D Silicon Die / Mold Cap on top of the green BGA interposer substrate
         const dieRoof = insetQuad(roofPts, 0.14, 0.14);
         ctx.save();
         ctx.beginPath();
         dieRoof.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
         ctx.closePath();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.84)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.75)';
         ctx.lineWidth = 1.1;
         ctx.stroke();
 
-        // Gold Pin-1 corner triangle on BGA substrate
-        const f1 = lerpPt(roofPts[0], roofPts[1], 0.14);
-        const f3 = lerpPt(roofPts[0], roofPts[3], 0.14);
+        const f1 = lerpPt(roofPts[0], roofPts[1], 0.15);
+        const f3 = lerpPt(roofPts[0], roofPts[3], 0.15);
         ctx.beginPath();
         ctx.moveTo(roofPts[0].x, roofPts[0].y);
         ctx.lineTo(f1.x, f1.y);
@@ -1375,8 +1390,8 @@ export function renderBoard3D(
         ctx.fillStyle = '#facc15';
         ctx.fill();
         ctx.restore();
-      } else if (spec.kind === 'inductor' && screenSize >= 12) {
-        // Raised circular sintered ferrite drum core boss on power inductors
+      } else if (spec.kind === 'inductor' && screenSize >= 10) {
+        // Raised circular sintered ferrite drum core boss + copper winding ring
         const rcx = (roofPts[0].x + roofPts[1].x + roofPts[2].x + roofPts[3].x) * 0.25;
         const rcy = (roofPts[0].y + roofPts[1].y + roofPts[2].y + roofPts[3].y) * 0.25;
         const d01 = Math.hypot(roofPts[1].x - roofPts[0].x, roofPts[1].y - roofPts[0].y);
@@ -1386,36 +1401,51 @@ export function renderBoard3D(
           ctx.save();
           ctx.beginPath();
           ctx.arc(rcx, rcy, rBoss, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(22, 26, 32, 0.78)';
+          ctx.fillStyle = 'rgba(20, 24, 30, 0.9)';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
-          ctx.lineWidth = 1.1;
+          ctx.strokeStyle = '#d97706';
+          ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.restore();
         }
       } else if (spec.kind === 'connector' && screenSize >= 10) {
-        // Recessed mating cavity + gold contact finger highlights
-        const slotRoof = insetQuad(roofPts, 0.14, 0.24);
+        // Recessed mating cavity + vertical 3D gold header posts inside the shroud
+        const slotRoof = insetQuad(roofPts, 0.08, 0.24);
         ctx.save();
         ctx.beginPath();
         slotRoof.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
         ctx.closePath();
-        ctx.fillStyle = 'rgba(10, 14, 19, 0.86)';
+        ctx.fillStyle = 'rgba(10, 14, 19, 0.9)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)';
-        ctx.lineWidth = 1.1;
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 1.2;
         ctx.stroke();
+
+        // Draw 3D vertical gold contact posts rising from zBase to zRoof inside the connector
+        if (pinCount <= 40) {
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = Math.min(3.5, Math.max(1.5, screenSize * 0.04));
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          for (let pIdx = part.pinStart; pIdx < Math.min(part.pinEnd, board.pins.length); pIdx++) {
+            const pin = board.pins[pIdx];
+            const pBot = P(pin, zBase + zSign * spec.heightMil * 0.2);
+            const pTop = P(pin, zRoof - zSign * spec.heightMil * 0.08);
+            ctx.moveTo(pBot.x, pBot.y);
+            ctx.lineTo(pTop.x, pTop.y);
+          }
+          ctx.stroke();
+        }
         ctx.restore();
       } else if ((spec.kind === 'ic' || spec.kind === 'transistor') && part.pinStart < board.pins.length && screenSize >= 10) {
-        // Concave Pin-1 dimple on IC / Transistor roof
         const rcx = (roofPts[0].x + roofPts[1].x + roofPts[2].x + roofPts[3].x) * 0.25;
         const rcy = (roofPts[0].y + roofPts[1].y + roofPts[2].y + roofPts[3].y) * 0.25;
         const sp1 = P(board.pins[part.pinStart], zRoof);
-        const dimple = lerpPt({ x: rcx, y: rcy }, sp1, 0.52);
+        const dimple = lerpPt({ x: rcx, y: rcy }, sp1, 0.5);
         ctx.save();
         ctx.beginPath();
-        ctx.arc(dimple.x, dimple.y, Math.min(3.5, Math.max(1.5, screenSize * 0.06)), 0, Math.PI * 2);
-        ctx.fillStyle = '#e2e8f0';
+        ctx.arc(dimple.x, dimple.y, Math.min(3.8, Math.max(1.8, screenSize * 0.06)), 0, Math.PI * 2);
+        ctx.fillStyle = '#f8fafc';
         ctx.fill();
         ctx.restore();
       }
@@ -1425,11 +1455,11 @@ export function renderBoard3D(
       roofPts.forEach((pt, idx) => (idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.closePath();
       ctx.strokeStyle = selected ? palette.selectionRing : focused ? palette.active : spec.bodyStroke;
-      ctx.lineWidth = selected ? 2.2 : focused ? 1.7 : 1;
+      ctx.lineWidth = selected ? 2.2 : focused ? 1.7 : 1.1;
       ctx.stroke();
 
-      // 3D Component Silkscreen Label on the Roof Face (shown on ICs/Inductors/Connectors or when zoomed in / selected)
-      if (layers.labels && (spec.showLabelAtAllZooms || screenSize >= 28 || selected || focused)) {
+      // 3D Component Silkscreen Label on the Roof Face
+      if (layers.labels && (!isDenseBoard || spec.showLabelAtAllZooms || screenSize >= 26 || selected || focused)) {
         const rcx = (roofPts[0].x + roofPts[1].x + roofPts[2].x + roofPts[3].x) * 0.25;
         const rcy = (roofPts[0].y + roofPts[1].y + roofPts[2].y + roofPts[3].y) * 0.25;
         const dx01 = roofPts[1].x - roofPts[0].x, dy01 = roofPts[1].y - roofPts[0].y;
@@ -1440,40 +1470,34 @@ export function renderBoard3D(
         if (angle > Math.PI / 2) angle -= Math.PI;
         if (angle < -Math.PI / 2) angle += Math.PI;
 
-        const maxFontW = (longSide * 0.72) / Math.max(1, part.name.length * 0.6);
-        const maxFontH = shortSide * 0.68;
-        const fontPx = Math.min(12, Math.floor(Math.min(maxFontW, maxFontH)));
+        const maxFontW = (longSide * 0.75) / Math.max(1, part.name.length * 0.58);
+        const maxFontH = shortSide * 0.72;
+        const fontPx = Math.min(12.5, Math.floor(Math.min(maxFontW, maxFontH)));
 
-        if (fontPx >= 7.5 && shortSide >= 10) {
+        if (fontPx >= 7.5 && shortSide >= 9) {
           ctx.save();
           ctx.translate(rcx, rcy);
           ctx.rotate(angle);
           ctx.font = `700 ${fontPx}px ui-monospace, SFMono-Regular, Menlo, monospace`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-          ctx.lineWidth = 2.4;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.88)';
+          ctx.lineWidth = 2.5;
           ctx.strokeText(part.name, 0, 0);
-          ctx.fillStyle = selected || focused ? '#fde047' : '#f8fafc';
+          ctx.fillStyle = selected || focused ? '#fde047' : '#ffffff';
           ctx.fillText(part.name, 0, 0);
           ctx.restore();
-        } else if (selected || focused) {
+        } else if (selected || focused || (!isDenseBoard && screenSize >= 10)) {
           ctx.save();
-          ctx.font = '700 10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+          ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const tw = ctx.measureText(part.name).width + 10;
-          const th = 16;
-          const topY = Math.min(roofPts[0].y, roofPts[1].y, roofPts[2].y, roofPts[3].y) - th - 6;
-          ctx.fillStyle = palette.tooltipBg;
-          ctx.strokeStyle = selected ? palette.selectionRing : palette.active;
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.rect(rcx - tw / 2, topY, tw, th);
-          ctx.fill();
-          ctx.stroke();
-          ctx.fillStyle = palette.labelFocus;
-          ctx.fillText(part.name, rcx, topY + th / 2 + 0.5);
+          const topY = Math.min(roofPts[0].y, roofPts[1].y, roofPts[2].y, roofPts[3].y) - 9;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+          ctx.lineWidth = 2.6;
+          ctx.strokeText(part.name, rcx, topY);
+          ctx.fillStyle = selected || focused ? '#fde047' : '#f8fafc';
+          ctx.fillText(part.name, rcx, topY);
           ctx.restore();
         }
       }
@@ -1486,11 +1510,15 @@ export function renderBoard3D(
   };
 
   // 3. Draw Far-Side -> 3D PCB Substrate -> Near-Side in true Z-order
+  const bothSidesActive = layers.top && layers.bottom;
   const farSide: 'top' | 'bottom' = topFacesCamera ? 'bottom' : 'top';
   const nearSide: 'top' | 'bottom' = topFacesCamera ? 'top' : 'bottom';
 
-  drawSideComponentsAndPins(farSide);
+  if (bothSidesActive) {
+    drawSideComponentsAndPins(farSide);
+  }
 
+  // Draw 3D Extruded PCB Substrate
   if (layers.outline && (board.outline.length > 1 || (board.outlineSegments && board.outlineSegments.length > 0))) {
     const zFar = topFacesCamera ? zBotSurface : zTopSurface;
     const zNear = topFacesCamera ? zTopSurface : zBotSurface;
@@ -1511,26 +1539,33 @@ export function renderBoard3D(
         ctx.moveTo(aFar.x, aFar.y);
         ctx.lineTo(aNear.x, aNear.y);
       }
-      ctx.strokeStyle = 'rgba(161, 126, 60, 0.55)';
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = 'rgba(161, 126, 60, 0.6)';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
     }
 
     ctx.beginPath();
     traceMultiContour3D(ctx, board.outline, board.outlineSegments, P, zNear);
     if (board.outline.length > 2) {
+      const alpha = bothSidesActive ? 0.72 : 0.92;
       ctx.fillStyle = isClassic
-        ? 'rgba(16, 78, 52, 0.88)'
-        : 'rgba(13, 35, 39, 0.9)';
+        ? `rgba(16, 78, 52, ${alpha})`
+        : `rgba(13, 35, 39, ${alpha})`;
       ctx.fill('evenodd');
     }
     ctx.strokeStyle = '#d4af37';
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 1.9;
     ctx.stroke();
     ctx.restore();
   }
 
-  drawSideComponentsAndPins(nearSide);
+  if (bothSidesActive) {
+    drawSideComponentsAndPins(nearSide);
+  } else if (layers.top) {
+    drawSideComponentsAndPins('top');
+  } else if (layers.bottom) {
+    drawSideComponentsAndPins('bottom');
+  }
 
   // 4. 3D Parabolic Net Airwire Arcs
   if (highlightNet && highlightNet !== 'UNCONNECTED' && highlightNet !== 'NC' && highlightNet !== 'GND' && highlightNet !== 'GROUND') {
@@ -1540,20 +1575,20 @@ export function renderBoard3D(
         ? selection.index
         : (info.pinIndices.find((idx) => sideVisible(board.pins[idx].side, layers)) ?? info.pinIndices[0]);
       const hubPin = board.pins[hubIdx];
-      const zHub = hubPin.side === 'bottom' ? zBotSurface : zTopSurface;
+      const { zBase: zHub, zSign: hubSign } = getSideZ(hubPin.side, layers, topFacesCamera);
       const sHub = P(hubPin, zHub);
 
       ctx.save();
       ctx.strokeStyle = palette.netActive;
-      ctx.lineWidth = 1.65;
+      ctx.lineWidth = 1.75;
       for (const idx of info.pinIndices) {
         if (idx === hubIdx) continue;
         const targetPin = board.pins[idx];
         const visible = sideVisible(targetPin.side, layers);
-        const zTarget = targetPin.side === 'bottom' ? zBotSurface : zTopSurface;
+        const { zBase: zTarget } = getSideZ(targetPin.side, layers, topFacesCamera);
         const sTarget = P(targetPin, zTarget);
         const distWorld = Math.hypot(targetPin.x - hubPin.x, targetPin.y - hubPin.y);
-        const arcLift = Math.min(260, Math.max(45, distWorld * 0.18)) * (topFacesCamera ? 1 : -1);
+        const arcLift = Math.min(260, Math.max(45, distWorld * 0.18)) * hubSign;
         const midWorld: Point = {
           x: (hubPin.x + targetPin.x) * 0.5,
           y: (hubPin.y + targetPin.y) * 0.5,
@@ -1576,22 +1611,24 @@ export function renderBoard3D(
     let selPt: ProjectedPoint | null = null;
     if (selection.kind === 'pin' && board.pins[selection.index]) {
       const pin = board.pins[selection.index];
-      selPt = P(pin, pin.side === 'bottom' ? zBotSurface : zTopSurface);
+      const { zBase } = getSideZ(pin.side, layers, topFacesCamera);
+      selPt = P(pin, zBase);
     } else if (selection.kind === 'nail' && board.nails[selection.index]) {
       const nail = board.nails[selection.index];
-      selPt = P(nail, nail.side === 'bottom' ? zBotSurface : zTopSurface);
+      const { zBase } = getSideZ(nail.side, layers, topFacesCamera);
+      selPt = P(nail, zBase);
     } else if (selection.kind === 'part' && board.parts[selection.index]?.box && !board.parts[selection.index]?.isDummy) {
       const part = board.parts[selection.index];
       const spec = classifyPartPackage(part);
       const b = part.box!;
-      const zRoof = (part.side === 'bottom' ? zBotSurface : zTopSurface)
-        + (part.side === 'bottom' ? -spec.heightMil : spec.heightMil);
+      const { zBase, zSign } = getSideZ(part.side, layers, topFacesCamera);
+      const zRoof = zBase + zSign * spec.heightMil;
       selPt = P({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, zRoof);
     }
     if (selPt) {
       ctx.save();
       ctx.strokeStyle = palette.selectionRing;
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
       ctx.arc(selPt.x, selPt.y, 14, 0, Math.PI * 2);
       ctx.stroke();

@@ -5,9 +5,9 @@ import type { BoardIndex } from '../lib/search';
 import type { Palette } from '../lib/theme';
 import { fitView, focusBounds, makeTransform, pointInPolygon, zoomAt, type View } from '../lib/geometry';
 import {
-  BOARD_HALF_THICKNESS_MIL,
   classifyPartPackage,
   drawRealistic2DPart,
+  getSideZ,
   makeProjector3D,
   orbitAroundPivot,
   renderBoard3D,
@@ -697,8 +697,8 @@ export function BoardCanvas(props: Props) {
         if (angle < -Math.PI / 2) angle += Math.PI;
 
         const spec = isRealistic ? classifyPartPackage(part) : null;
-        // In Realistic mode, keep small passives' ceramic/resistive bodies clean until zoomed in (>= 26px)
-        if (isRealistic && spec && !spec.showLabelAtAllZooms && !selected && !focused && longSide < 26) {
+        // On dense boards in Realistic mode, keep small passives' ceramic/resistive bodies clean until zoomed in (>= 26px)
+        if (isDenseBoard && isRealistic && spec && !spec.showLabelAtAllZooms && !selected && !focused && longSide < 26) {
           continue;
         }
 
@@ -821,9 +821,9 @@ export function BoardCanvas(props: Props) {
       if (layers.pins) {
         board.pins.forEach((pin, i) => {
           if (!sideVisible(pin.side, layers)) return;
-          const z = pin.side === 'bottom' ? -BOARD_HALF_THICKNESS_MIL : BOARD_HALF_THICKNESS_MIL;
-          const sp = proj3d.project3D(pin, z);
-          const hitPx = Math.max(12, pin.radius * view.scale * sp.persp * 1.1);
+          const { zBase } = getSideZ(pin.side, layers, proj3d.topFacesCamera);
+          const sp = proj3d.project3D(pin, zBase);
+          const hitPx = Math.max(12, pin.radius * view.scale * sp.persp * 1.15);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
           if (d < hitPx && d < best3d.d) {
             best3d.kind = 'pin';
@@ -835,8 +835,8 @@ export function BoardCanvas(props: Props) {
       if (layers.nails) {
         board.nails.forEach((nail, i) => {
           if (!sideVisible(nail.side, layers)) return;
-          const z = nail.side === 'bottom' ? -BOARD_HALF_THICKNESS_MIL : BOARD_HALF_THICKNESS_MIL;
-          const sp = proj3d.project3D(nail, z);
+          const { zBase } = getSideZ(nail.side, layers, proj3d.topFacesCamera);
+          const sp = proj3d.project3D(nail, zBase);
           const d = Math.hypot(sp.x - sx, sp.y - sy);
           if (d < 12 && d < best3d.d) {
             best3d.kind = 'nail';
@@ -880,8 +880,8 @@ export function BoardCanvas(props: Props) {
         const poly = partPoly(part);
         if (!poly) continue;
         const spec = classifyPartPackage(part);
-        const zBase = part.side === 'bottom' ? -BOARD_HALF_THICKNESS_MIL : BOARD_HALF_THICKNESS_MIL;
-        const zRoof = zBase + (part.side === 'bottom' ? -spec.heightMil : spec.heightMil);
+        const { zBase, zSign } = getSideZ(part.side, layers, proj3d.topFacesCamera);
+        const zRoof = zBase + zSign * spec.heightMil;
         const roofQuad = poly.map((pt) => proj3d.project3D(pt, zRoof));
         const baseQuad = poly.map((pt) => proj3d.project3D(pt, zBase));
         if (pointInPolygon(screenPt, roofQuad) || pointInPolygon(screenPt, baseQuad)) {
@@ -1021,8 +1021,8 @@ export function BoardCanvas(props: Props) {
       if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
       if (drag.current.orbiting && board) {
         const nextCam: Camera3D = {
-          yawDeg: ((drag.current.yawDeg + dx * 0.42 + 540) % 360) - 180,
-          pitchDeg: Math.max(0, Math.min(76, drag.current.pitchDeg - dy * 0.35)),
+          yawDeg: ((drag.current.yawDeg + dx * 0.45 + 540) % 360) - 180,
+          pitchDeg: Math.max(-175, Math.min(175, drag.current.pitchDeg - dy * 0.4)),
         };
         setCam3d(nextCam);
         // Pivot around the screen center point so the inspected component never flies off screen!
@@ -1037,7 +1037,10 @@ export function BoardCanvas(props: Props) {
         );
         onView({ ...view, panX, panY });
       } else {
-        const pitchScaleY = renderMode === '3d' ? Math.max(0.35, Math.cos((cam3d.pitchDeg * Math.PI) / 180)) : 1;
+        const cosP = Math.cos((cam3d.pitchDeg * Math.PI) / 180);
+        const pitchScaleY = renderMode === '3d'
+          ? (cosP >= 0 ? Math.max(0.35, cosP) : Math.min(-0.35, cosP))
+          : 1;
         onView({ ...view, panX: drag.current.panX + dx, panY: drag.current.panY + dy / pitchScaleY });
       }
       onCursor(proj3d ? proj3d.unprojectToPlane(p.x, p.y, 0) : (tr?.toWorld(p.x, p.y) ?? null));
@@ -1195,15 +1198,15 @@ export function BoardCanvas(props: Props) {
           <span className="cam3d-sep" />
           <button
             type="button"
-            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.min(75, cam3d.pitchDeg + 10) })}
+            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.min(175, cam3d.pitchDeg + 15) })}
             title="Tilt 3D camera steeper"
           >
             Tilt +
           </button>
           <button
             type="button"
-            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.max(0, cam3d.pitchDeg - 10) })}
-            title="Flatten 3D camera tilt"
+            onClick={() => applyCam3D({ ...cam3d, pitchDeg: Math.max(-175, cam3d.pitchDeg - 15) })}
+            title="Flatten / invert 3D camera tilt"
           >
             Tilt −
           </button>

@@ -363,10 +363,10 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
       }
       const pitch = Number.isFinite(minDistSq) ? Math.sqrt(minDistSq) : 24;
 
-      // Ported from OpenBoardView BoardView::DrawParts empirical SMD sizing + pitch clamp.
+      // Ported from OpenBoardView BoardView::DrawParts empirical SMD sizing + proportional fallback.
       const p0 = (part.name[0] || '').toUpperCase();
       const p1 = (part.name[1] || '').toUpperCase();
-      let pinRadius = Math.max(2.6, Math.min(8.5, pitch * 0.35));
+      let pinRadius = Math.max(3.2, Math.min(18, pitch * 0.34));
 
       if (own.length < 4 && p0 !== 'U' && p0 !== 'Q') {
         if (distance > 18 && distance < 22) pinRadius = 4.2;       // 0201 passive
@@ -376,6 +376,10 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
         else if (distance > 101 && distance < 112) pinRadius = 18; // 1206 / SMA
         else if (distance > 165 && distance < 169) pinRadius = 22; // SMB diode
         else if (distance > 195 && distance < 253) pinRadius = 28; // Inductor / SMC
+        else if (distance > 12) {
+          // Smooth proportional SMD pad sizing for any non-standard passive pitch
+          pinRadius = Math.max(4.2, Math.min(30, distance * 0.22));
+        }
       }
       if (Number.isFinite(minDistSq)) {
         pinRadius = Math.min(pinRadius, Math.sqrt(minDistSq) * 0.42);
@@ -385,10 +389,14 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
         if (!pin.radius || pin.radius === 7 || pin.radius === 12) pin.radius = pinRadius;
       }
 
-      const bMinX = minX - pinRadius;
-      const bMaxX = maxX + pinRadius;
-      const bMinY = minY - pinRadius;
-      const bMaxY = maxY + pinRadius;
+      const isConnector = p0 === 'J' || part.name.toUpperCase().startsWith('CN') || part.name.toUpperCase().startsWith('CON');
+      const padX = isConnector && (maxX - minX) < pitch * 0.5 ? Math.max(pinRadius * 1.8, pitch * 0.42) : pinRadius;
+      const padY = isConnector && (maxY - minY) < pitch * 0.5 ? Math.max(pinRadius * 1.8, pitch * 0.42) : pinRadius;
+
+      const bMinX = minX - padX;
+      const bMaxX = maxX + padX;
+      const bMinY = minY - padY;
+      const bMaxY = maxY + padY;
       const aspect = bMaxY - bMinY < 0.01 ? 0 : (bMaxX - bMinX) / (bMaxY - bMinY);
 
       const dbox: Point[] = [
@@ -406,15 +414,15 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
         const dx = own[1].x - own[0].x;
         const dy = own[1].y - own[0].y;
         const angle = Math.atan2(dy, dx);
-        let armx = pinRadius;
-        let army = pinRadius;
+        let armx = Math.max(pinRadius, distance * 0.16);
+        let army = Math.max(pinRadius, distance * 0.25);
         if ((p0 === 'L' || p1 === 'L') && distance > 50) {
-          pinRadius = Math.min(12, distance * 0.22);
+          pinRadius = Math.min(18, Math.max(8, distance * 0.18));
           for (const pin of own) pin.radius = pinRadius;
-          army = distance / 2;
-          armx = pinRadius;
-        } else if ((p0 === 'C' || p1 === 'C') && distance > 90) {
-          pinRadius = Math.min(12, distance * 0.16);
+          army = distance * 0.42;
+          armx = pinRadius * 1.1;
+        } else if ((p0 === 'C' || p1 === 'C') && distance > 90 && part.name.toUpperCase().startsWith('CE')) {
+          pinRadius = Math.min(14, distance * 0.16);
           for (const pin of own) pin.radius = pinRadius;
           army = distance / 2 - distance / 4;
           armx = pinRadius;
@@ -433,7 +441,7 @@ export function finalizeBoard(raw: RawBoard, name: string, format: string, forma
         const hull = convexHull(own);
         if (hull.length >= 3) {
           part.hull = hull;
-          part.outline = mbbCalculate(hull, pinRadius);
+          part.outline = mbbCalculate(hull, Math.max(padX, padY));
         } else {
           part.outline = dbox;
         }
